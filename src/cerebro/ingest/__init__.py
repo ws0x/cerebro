@@ -16,9 +16,13 @@ _SUBTITLE_EXTS = {".vtt", ".srt", ".txt"}
 _VIDEO_EXTS = {".mp4", ".mkv", ".mov", ".webm", ".avi", ".m4v"}
 
 
+def looks_like_youtube(source: str) -> bool:
+    return bool(_YOUTUBE_RE.search(source))
+
+
 def load_transcript(source: str) -> Transcript:
     """Load a transcript from a URL or local file path."""
-    if _YOUTUBE_RE.search(source):
+    if looks_like_youtube(source):
         from .youtube import load_youtube
 
         return load_youtube(source)

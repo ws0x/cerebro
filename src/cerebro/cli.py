@@ -26,13 +26,14 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.progress import BarColumn, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.progress import Progress as RichProgress
+from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
 from . import __version__
 from .batch import BatchItem, run_batch
 from .cache import Cache
 from .convert import write_opml, write_xmind
-from .ingest import load_transcript
+from .ingest import load_transcript, looks_like_youtube
 from .ingest.folder import discover_course_sources
 from .ingest.playlist import is_playlist_url, load_playlist
 from .llm.base import LLMError
@@ -43,8 +44,7 @@ from .ui import print_banner, print_preview
 
 app = typer.Typer(
     add_completion=False,
-    no_args_is_help=True,
-    help="Turn video content into XMind-compatible smart mind maps.",
+    help="Turn video content into XMind-compatible smart mind maps. Run with no arguments for a guided wizard.",
 )
 console = Console()
 
@@ -89,13 +89,18 @@ def _version_callback(value: bool):
         raise typer.Exit()
 
 
-@app.callback()
+@app.callback(invoke_without_command=True)
 def _main(
+    ctx: typer.Context,
     version: bool = typer.Option(
         False, "--version", callback=_version_callback, is_eager=True, help="Show version and exit."
     ),
 ):
     """Cerebro root."""
+    print_banner()
+    load_env()
+    if ctx.invoked_subcommand is None:
+        _interactive_wizard()
 
 
 @app.command()
@@ -111,8 +116,12 @@ def map(
     preview: bool = typer.Option(True, "--preview/--no-preview", help="Show the map in-terminal."),
 ):
     """Build a mind map from SOURCE and write it to disk."""
-    print_banner()
-    load_env()
+    _do_map(source, level, fmt, out, engine, no_cache, preview)
+
+
+def _do_map(
+    source: str, level: str, fmt: str, out: Path | None, engine: str, no_cache: bool, preview: bool
+) -> None:
     t0 = time.perf_counter()
 
     try:
@@ -165,8 +174,20 @@ def batch(
     preview: bool = typer.Option(True, "--preview/--no-preview", help="Show the map in-terminal."),
 ):
     """Build one combined mind map from a YouTube playlist or a local course folder."""
-    print_banner()
-    load_env()
+    _do_batch(source, level, fmt, out, engine, workers, limit, no_cache, preview)
+
+
+def _do_batch(
+    source: str,
+    level: str,
+    fmt: str,
+    out: Path | None,
+    engine: str,
+    workers: int,
+    limit: int | None,
+    no_cache: bool,
+    preview: bool,
+) -> None:
     t0 = time.perf_counter()
 
     transcribe_count = 0
@@ -255,6 +276,82 @@ def batch(
         console.print()
 
     _export(combined, fmt, out, level, time.perf_counter() - t0)
+
+
+@app.command()
+def interactive():
+    """Guided wizard: pick a source, level, engine, and format step by step."""
+    _interactive_wizard()
+
+
+def _detect_source_kind(source: str) -> str:
+    if is_playlist_url(source):
+        return "playlist"
+    if looks_like_youtube(source):
+        return "youtube"
+    if Path(source).is_dir():
+        return "folder"
+    if Path(source).exists():
+        return "file"
+    return "unknown"
+
+
+_KIND_LABEL = {
+    "playlist": "YouTube playlist (batch)",
+    "youtube": "YouTube video",
+    "folder": "local course folder (batch)",
+    "file": "local file",
+}
+
+
+def _interactive_wizard() -> None:
+    console.print("[bold cyan]Let's build a mind map.[/] [dim](Ctrl+C to cancel anytime)[/]\n")
+
+    while True:
+        source = Prompt.ask(
+            "[cyan]Paste a YouTube URL, playlist URL, or local file/folder path[/]"
+        ).strip()
+        kind = _detect_source_kind(source)
+        if kind == "unknown":
+            console.print(f"[red]✗ Not a recognizable URL or existing path: {source}[/]\n")
+            continue
+        break
+
+    console.print(f"[green]✓[/] Detected: [bold]{_KIND_LABEL[kind]}[/]\n")
+
+    level = Prompt.ask("[cyan]Processing level[/]", choices=["brief", "full", "expert"], default="full")
+    engine = Prompt.ask(
+        "[cyan]Engine[/] [dim](auto picks Groq/Gemini if a key is set, else offline)[/]",
+        choices=["auto", "groq", "gemini", "heuristic"],
+        default="auto",
+    )
+
+    console.print("[dim]  opml = imports everywhere · xmind = native, keeps relationships & icons[/]")
+    fmt_default = "xmind" if level == "expert" else "opml"
+    fmt = Prompt.ask("[cyan]Output format[/]", choices=["opml", "xmind"], default=fmt_default)
+
+    out_str = Prompt.ask("[cyan]Output path[/]", default=f"mindmap.{fmt}")
+    out = Path(out_str)
+
+    summary = Table.grid(padding=(0, 2))
+    summary.add_row("[dim]Source[/]", source)
+    summary.add_row("[dim]Type[/]", _KIND_LABEL[kind])
+    summary.add_row("[dim]Level[/]", level)
+    summary.add_row("[dim]Engine[/]", engine)
+    summary.add_row("[dim]Format[/]", fmt.upper())
+    summary.add_row("[dim]Output[/]", str(out))
+    console.print()
+    console.print(Panel(summary, title="[cyan]Ready[/]", border_style="cyan", expand=False))
+
+    if not Confirm.ask("\n[cyan]Proceed?[/]", default=True):
+        console.print("[dim]Cancelled.[/]")
+        raise typer.Exit()
+    console.print()
+
+    if kind in ("playlist", "folder"):
+        _do_batch(source, level, fmt, out, engine, workers=3, limit=None, no_cache=False, preview=True)
+    else:
+        _do_map(source, level, fmt, out, engine, no_cache=False, preview=True)
 
 
 def _export(mm, fmt: str, out: Path | None, level: str, elapsed: float) -> None:

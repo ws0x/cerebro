@@ -7,11 +7,17 @@ Give it a YouTube URL, a local subtitle track, or a course folder; get back a
 mind map you can open directly in XMind (via OPML today, native `.xmind` soon).
 
 ```
+cerebro                                                    # guided wizard
 cerebro map "https://youtu.be/VIDEO_ID" --level full
 cerebro map examples/intro_to_neural_networks.vtt --level expert
 cerebro batch "https://youtube.com/playlist?list=..." --level full --limit 10
 cerebro batch path/to/course_folder --format xmind
 ```
+
+Bare `cerebro` (or `cerebro interactive`) launches a guided wizard — paste a
+source, answer a few prompts, done. It detects what you pasted (single video,
+playlist, course folder, local file) and routes to the same `map`/`batch`
+pipeline flag-driven use hits, so behavior is identical either way.
 
 ## Architecture
 
@@ -101,4 +107,26 @@ covers every input source and output format from the original spec.
 py -3 -m venv .venv
 .venv\Scripts\pip install -e ".[dev]"
 .venv\Scripts\pytest
+```
+
+## Distribute
+
+**pipx / pip** — already packaged correctly (`pyproject.toml` entry point):
+
+```
+pipx install .          # or: pip install .
+cerebro                 # entry point resolves anywhere
+```
+
+**Standalone binary** — no Python required. Built with PyInstaller against the
+*base* dependency set (`faster_whisper`/`ctranslate2`/`av`/`tokenizers`
+excluded — keeps it ~23MB instead of ~99MB). The binary supports everything
+except Whisper transcription; embedded-subtitle extraction still works since
+that's just an `ffmpeg` subprocess call. Users who want Whisper should
+`pip install cerebro[whisper]` instead of using the binary.
+
+```
+.venv\Scripts\pip install pyinstaller
+.venv\Scripts\python -m PyInstaller cerebro.spec   # reproducible: see cerebro.spec
+# -> dist\cerebro.exe, single file, run from anywhere
 ```

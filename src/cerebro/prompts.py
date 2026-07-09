@@ -5,13 +5,22 @@ literal JSON braces doubled (``{{`` / ``}}``). Bump ``PROMPT_VERSION`` whenever 
 prompt changes so the cache invalidates cleanly (it is part of every cache key).
 """
 
-PROMPT_VERSION = "v1"
+PROMPT_VERSION = "v2"
 
 NODE_TYPES = "topic, concept, definition, example, insight, action, warning, question, detail"
+
+_GROUNDING = """GROUNDING RULE (critical): only use what is explicitly stated in the
+input. Do not introduce outside facts, named techniques, examples, or specifics
+that are implied by the topic but not actually said. If the input refers to
+something generically (e.g. "an activation function"), keep your title equally
+generic (e.g. "Activation Function") — do NOT name a specific instance (e.g.
+"Sigmoid" or "ReLU") unless that specific name is literally present in the text."""
 
 _MAP = """You are an expert knowledge cartographer. TASK: MAP.
 You receive one segment of a video transcript. Extract its core teaching as a
 compact JSON object. Do not summarize the whole video — only this segment.
+
+{grounding}
 
 Return ONLY JSON with this shape:
 {{
@@ -29,6 +38,11 @@ You receive an ordered list of per-segment extractions from one video. Build a
 single, smart, hierarchical mind map: merge duplicate topics, promote recurring
 themes to parent nodes, demote details to leaves, and order branches logically
 (not merely chronologically).
+
+{grounding}
+This applies to merging too: you may rename a branch to a more general umbrella
+term that covers its children, but never invent a more specific term than what
+the segments actually contain.
 
 Return ONLY JSON with this shape (children may nest to any depth):
 {{
@@ -48,6 +62,8 @@ LINK_SYSTEM = """You are an expert knowledge cartographer. TASK: LINK.
 You receive a numbered list of nodes from a finished mind map. Identify the most
 important NON-hierarchical relationships between them (dependency, cause,
 contrast, example-of, prerequisite). Only link nodes in different branches.
+Only propose a relationship that is actually supported by the node titles given
+— do not invent a connection that isn't reasonably implied by them.
 
 Return ONLY JSON:
 {
@@ -64,9 +80,9 @@ LEVEL_DEPTH = {
     "expert": "a rich map 4+ levels deep with concepts, examples, and actionable insights",
 }
 
-MAP_SYSTEM = _MAP.format(node_types=NODE_TYPES)
+MAP_SYSTEM = _MAP.format(node_types=NODE_TYPES, grounding=_GROUNDING)
 
 
 def reduce_system(level: str) -> str:
     depth = LEVEL_DEPTH.get(level, LEVEL_DEPTH["full"])
-    return _REDUCE.format(node_types=NODE_TYPES, depth=depth)
+    return _REDUCE.format(node_types=NODE_TYPES, depth=depth, grounding=_GROUNDING)
