@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from ..paths import GLOBAL_ENV_PATH
 from .providers import GeminiProvider, GroqProvider, MockProvider
 
 
@@ -18,8 +19,14 @@ class ConfigError(RuntimeError):
 
 
 def load_env(*extra_paths: str | Path) -> None:
-    """Minimal .env loader (no dependency). Only sets vars not already set."""
-    candidates = [Path.cwd() / ".env", *(Path(p) for p in extra_paths)]
+    """Minimal .env loader (no dependency). Only sets vars not already set.
+
+    Checks the current directory's ``.env`` first (project-local override,
+    useful when developing cerebro itself or wanting a per-project key), then
+    falls back to the global ``~/.cerebro/.env`` — the one that actually
+    matters once cerebro is installed globally and run from anywhere.
+    """
+    candidates = [Path.cwd() / ".env", GLOBAL_ENV_PATH, *(Path(p) for p in extra_paths)]
     for path in candidates:
         if not path or not Path(path).exists():
             continue

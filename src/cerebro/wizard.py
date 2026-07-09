@@ -31,6 +31,7 @@ from rich.table import Table
 
 from .ingest import looks_like_youtube
 from .ingest.playlist import is_playlist_url
+from .paths import ensure_output_dir
 
 console = Console()
 
@@ -174,7 +175,8 @@ def _ask_format(level: str) -> str:
 
 
 def _ask_output(fmt: str) -> Path:
-    return Path(_ask_text("Output path:", default=f"mindmap.{fmt}"))
+    default = str(ensure_output_dir() / f"mindmap.{fmt}")
+    return Path(_ask_text("Output path:", default=default))
 
 
 def _summary_panel(source, kind, level, engine, fmt, out) -> Panel:

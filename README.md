@@ -140,12 +140,23 @@ no API key.
 | Groq | [console.groq.com/keys](https://console.groq.com/keys) | Fastest — Llama 3.3 70B, typically 2–5s per video |
 | Gemini | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) | Slower but stays closer to the literal source text |
 
-**2. Save it:**
+**2. Save it — where depends on how you installed cerebro:**
 
 ```bash
+# Running from source / a clone (repo-local, only works in that directory):
 cp .env.example .env
-# open .env, paste your key into GROQ_API_KEY= or GEMINI_API_KEY=
+
+# Installed via pipx/pip and run as a global `cerebro` command from anywhere
+# (recommended — this is the one that actually matters once installed):
+mkdir -p ~/.cerebro && cp .env.example ~/.cerebro/.env
+# then edit either file, paste your key into GROQ_API_KEY= or GEMINI_API_KEY=
 ```
+
+cerebro checks the current directory's `.env` first, then falls back to
+`~/.cerebro/.env`. If you set a key in one but not the other and get **"No
+API key found — using the offline heuristic engine"** even though you know
+you configured one, this is almost always why — check you saved it to the
+one cerebro actually reads from wherever you're running it.
 
 **3. Run cerebro with no arguments** — the wizard walks you through the rest:
 
@@ -243,9 +254,14 @@ Build a mind map from a single source.
 | `--level`, `-l` | `full` | `brief` \| `full` \| `expert` — see [Processing levels](#processing-levels) |
 | `--engine`, `-e` | `auto` | `auto` \| `groq` \| `gemini` \| `heuristic` — see [Choosing an engine](#choosing-an-engine) |
 | `--format`, `-f` | `opml` | `opml` \| `xmind` — see [Output formats](#output-formats-opml-vs-xmind) |
-| `--out`, `-o` | *(derived from title)* | Output file path |
+| `--out`, `-o` | `~/cerebro-maps/<title>.<format>` | Output file path |
 | `--no-cache` | off | Disable the response cache for this run |
 | `--preview` / `--no-preview` | preview on | Show/hide the in-terminal tree before writing the file |
+
+If you don't pass `--out`, cerebro writes to a dedicated `~/cerebro-maps/`
+folder (created automatically) named after the source's title — not the
+current directory, so files don't scatter across wherever you happened to run
+the command from.
 
 ### `cerebro batch SOURCE [options]`
 
@@ -381,9 +397,13 @@ specific engine (`--engine groq`) but didn't set that key. Either add it to
 `.env`, or use `--engine auto` to let cerebro pick whatever's available (or
 fall back to offline).
 
-**No API key found — using the offline heuristic engine** — not an error,
-just a heads-up. The map will be structurally correct but won't have real
-AI-driven grouping. Add a free key to unlock that.
+**No API key found — using the offline heuristic engine, even though I set a
+key** — cerebro checks the current directory's `.env` first, then
+`~/.cerebro/.env`. This almost always means the key ended up in whichever one
+you *aren't* currently running cerebro from — see
+[Quick start](#quick-start) step 2. If it's genuinely a heads-up and not a
+mistake, it's not an error: the map will still be structurally correct, just
+without AI-driven grouping.
 
 **A relationship count of 0 at `expert` level** — relationships only appear
 when there are enough distinct branches for the model to meaningfully connect;
@@ -422,6 +442,7 @@ source ──▶ ingest ──▶ Transcript ──▶ structure ──▶ MindM
 | `cerebro.batch` | Fan-out + merge for playlists and course folders |
 | `cerebro.llm` | Provider abstraction (Groq / Gemini / mock) |
 | `cerebro.cache` | Content-addressed caching |
+| `cerebro.paths` | Stable, home-relative locations (`~/.cerebro/.env`, `~/cerebro-maps/`) so a globally-installed CLI works the same from any directory |
 | `cerebro.ui` | Rich banner, progress, and the in-terminal map preview |
 | `cerebro.wizard` | The guided interactive flow (arrow-key menus with a plain-prompt fallback) |
 | `cerebro.cli` | Typer commands (`map`, `batch`, `interactive`) |

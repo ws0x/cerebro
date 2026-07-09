@@ -37,6 +37,7 @@ from .ingest.folder import discover_course_sources
 from .ingest.playlist import is_playlist_url, load_playlist
 from .llm.base import LLMError
 from .llm.config import ConfigError, load_env, resolve_provider
+from .paths import ensure_output_dir
 from .structure import HeuristicStructurer
 from .structure.llm import LLMStructurer
 from .ui import print_banner, print_preview
@@ -317,7 +318,7 @@ def _export(mm, fmt: str, out: Path | None, level: str, elapsed: float) -> None:
         )
 
     if out is None:
-        out = Path.cwd() / f"{_safe_filename(mm.title)}.{fmt}"
+        out = ensure_output_dir() / f"{_safe_filename(mm.title)}.{fmt}"
     written = write_opml(mm, out) if fmt == "opml" else write_xmind(mm, out)
 
     summary = Table.grid(padding=(0, 2))
