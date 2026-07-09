@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<opml version="2.0">
+  <head>
+    <title>Photosynthesis</title>
+    <expansionState>0</expansionState>
+    <ownerName>cerebro</ownerName>
+  </head>
+  <body>
+    <outline text="Photosynthesis">
+      <outline text="Process Overview" _note="Plants convert sunlight into chemical energy using chlorophyll." _cerebroType="definition">
+        <outline text="Key Components" _cerebroType="concept">
+          <outline text="Chlorophyll" _note="Green pigment that plays a crucial role in photosynthesis." _cerebroType="detail"/>
+          <outline text="Sunlight" _note="Energy source for photosynthesis." _cerebroType="detail"/>
+        </outline>
+        <outline text="Output" _cerebroType="concept">
+          <outline text="Oxygen Release" _note="Byproduct of photosynthesis released into the atmosphere." _cerebroType="detail"/>
+          <outline text="Chemical Energy" _note="Energy stored in glucose molecules." _cerebroType="detail"/>
+        </outline>
+      </outline>
+      <outline text="Location" _note="Photosynthesis occurs in plant leaves." _cerebroType="detail"/>
+    </outline>
+  </body>
+</opml>

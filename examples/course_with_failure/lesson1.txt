@@ -1,0 +1,1 @@
+This lesson explains variables, functions, and control flow in programming, and why each one matters for building real software.

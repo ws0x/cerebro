@@ -1,0 +1,7 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:15.000
+Welcome to lesson two. Convolutional neural networks are specialized for image data, using filters that slide across the input to detect spatial patterns.
+
+00:00:15.000 --> 00:00:32.000
+Pooling layers reduce spatial dimensions while keeping the most important features, which helps the network generalize and reduces computation.

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<opml version="2.0">
+  <head>
+    <title>Database Optimization</title>
+    <expansionState>0</expansionState>
+    <ownerName>cerebro</ownerName>
+  </head>
+  <body>
+    <outline text="Database Optimization">
+      <outline text="Indexing" _note="Improves query speed but affects write performance." _cerebroType="concept">
+        <outline text="Benefits">
+          <outline text="Faster Query Execution"/>
+        </outline>
+        <outline text="Tradeoffs">
+          <outline text="Slower Write Operations"/>
+          <outline text="Index Maintenance" _note="Regular updates are required." _cerebroType="detail">
+            <outline text="Index Updates Required" _cerebroType="detail"/>
+          </outline>
+        </outline>
+      </outline>
+    </outline>
+  </body>
+</opml>

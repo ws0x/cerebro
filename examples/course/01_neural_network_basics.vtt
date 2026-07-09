@@ -1,0 +1,7 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:15.000
+Welcome to lesson one. Today we cover the fundamentals of neural networks and how they learn from data through gradient descent.
+
+00:00:15.000 --> 00:00:32.000
+A neural network takes an input, passes it through weighted layers, and produces an output. Backpropagation computes the gradients needed to update those weights.

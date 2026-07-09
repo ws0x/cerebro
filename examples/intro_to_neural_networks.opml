@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<opml version="2.0">
+  <head>
+    <title>Intro To Neural Networks</title>
+    <expansionState>0</expansionState>
+    <ownerName>cerebro</ownerName>
+  </head>
+  <body>
+    <outline text="Intro To Neural Networks">
+      <outline text="Welcome to this introduction to neural networks." _note="Welcome to this introduction to neural networks. Today we will build an intuition for how these systems actually learn from data.">
+        <outline text="Today we will build an intuition for how these systems actually learn from data." _cerebroType="detail"/>
+      </outline>
+      <outline text="At the core, a neural network is just a function." _note="[0:12] At the core, a neural network is just a function. It takes an input vector, passes it through layers of weighted connections, and produces an output.">
+        <outline text="It takes an input vector, passes it through layers of weighted connections, and produces…" _cerebroType="detail"/>
+      </outline>
+      <outline text="Each connection has a weight, and each neuron applies an…" _note="[0:28] Each connection has a weight, and each neuron applies an activation function. The activation introduces non-linearity, which is what lets the network model complex patterns.">
+        <outline text="The activation introduces non-linearity, which is what lets the network model complex…" _cerebroType="detail"/>
+      </outline>
+      <outline text="Let's talk about training." _note="[1:00] Let's talk about training. Training is the process of adjusting the weights so the network's predictions get closer to the truth. We measure error using a loss function.">
+        <outline text="Training is the process of adjusting the weights so the network's predictions get closer…" _cerebroType="detail"/>
+        <outline text="We measure error using a loss function." _cerebroType="detail"/>
+      </outline>
+      <outline text="The most common approach is gradient descent." _note="[1:18] The most common approach is gradient descent. We compute the gradient of the loss with respect to each weight, then nudge the weights in the opposite direction of the gradient.">
+        <outline text="We compute the gradient of the loss with respect to each weight, then nudge the weights…" _cerebroType="detail"/>
+      </outline>
+      <outline text="Backpropagation is the algorithm that computes those…" _note="[1:36] Backpropagation is the algorithm that computes those gradients efficiently. It applies the chain rule from calculus, working backwards from the output layer to the input layer.">
+        <outline text="It applies the chain rule from calculus, working backwards from the output layer to the…" _cerebroType="detail"/>
+      </outline>
+      <outline text="A key danger is overfitting." _note="[2:10] A key danger is overfitting. This happens when the network memorizes the training data instead of learning general patterns. It performs well in training but poorly on new data.">
+        <outline text="This happens when the network memorizes the training data instead of learning general…" _cerebroType="detail"/>
+        <outline text="It performs well in training but poorly on new data." _cerebroType="detail"/>
+      </outline>
+      <outline text="To fight overfitting we use regularization." _note="[2:28] To fight overfitting we use regularization. Techniques like dropout, weight decay, and early stopping all encourage the network to stay simple and generalize better.">
+        <outline text="Techniques like dropout, weight decay, and early stopping all encourage the network to…" _cerebroType="detail"/>
+      </outline>
+      <outline text="Finally, remember that data quality matters more than model…" _note="[3:00] Finally, remember that data quality matters more than model complexity. A clean, representative dataset will beat a fancy architecture trained on noise almost every time.">
+        <outline text="A clean, representative dataset will beat a fancy architecture trained on noise almost…" _cerebroType="detail"/>
+      </outline>
+      <outline text="That is the big picture." _note="[3:18] That is the big picture. Networks are functions, training is optimization by gradient descent, and generalization is the real goal. Thanks for watching.">
+        <outline text="Networks are functions, training is optimization by gradient descent, and generalization…" _cerebroType="detail"/>
+        <outline text="Thanks for watching." _cerebroType="detail"/>
+      </outline>
+    </outline>
+  </body>
+</opml>

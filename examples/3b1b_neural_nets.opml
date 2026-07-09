@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<opml version="2.0">
+  <head>
+    <title>3Blue1Brown Neural Networks</title>
+    <expansionState>0</expansionState>
+  </head>
+  <body>
+    <outline text="3Blue1Brown Neural Networks">
+      <outline text="But what is a neural network? | Deep learning chapter 1">
+        <outline text="Neural Network Basics" _note="Introduction to neural networks inspired by the brain" _cerebroType="concept">
+          <outline text="Neurons Hold Activations" _cerebroType="definition"/>
+          <outline text="Layers of Neurons" _cerebroType="concept"/>
+          <outline text="Recognizing Handwritten Digits" _cerebroType="example"/>
+        </outline>
+        <outline text="Neural Network Structure" _note="How neural networks process information through layers" _cerebroType="concept">
+          <outline text="Weighted Sums" _cerebroType="concept"/>
+          <outline text="Sigmoid Function" _cerebroType="definition">
+            <outline text="Sigmoid Function Limitations" _cerebroType="concept"/>
+          </outline>
+          <outline text="Matrix Vector Multiplication" _cerebroType="concept"/>
+          <outline text="Biases and Weights" _cerebroType="detail"/>
+        </outline>
+        <outline text="Neural Network Functions" _note="Complex functions that take input and produce output" _cerebroType="concept">
+          <outline text="Neural Network Complexity" _cerebroType="insight"/>
+          <outline text="ReLU Activation Function" _cerebroType="definition"/>
+          <outline text="Training Deep Networks" _cerebroType="detail"/>
+        </outline>
+        <outline text="Key Concepts" _note="Important ideas in neural networks" _cerebroType="concept">
+          <outline text="Linear Algebra Importance" _cerebroType="insight"/>
+        </outline>
+      </outline>
+      <outline text="Gradient descent, how neural networks learn | Deep Learning Chapter 2">
+        <outline text="Gradient Descent" _note="A method for minimizing a cost function" _cerebroType="concept">
+          <outline text="Gradient Descent Basics" _cerebroType="concept"/>
+          <outline text="Cost Function Definition" _cerebroType="definition"/>
+        </outline>
+        <outline text="Neural Network Optimization" _note="The process of adjusting weights and biases" _cerebroType="concept">
+          <outline text="Weight and Bias Adjustment" _cerebroType="action"/>
+          <outline text="Backpropagation" _cerebroType="concept"/>
+        </outline>
+        <outline text="Neural Network Limitations" _note="Understanding the limitations of neural networks" _cerebroType="insight">
+          <outline text="Neural Networks Memorize" _cerebroType="insight"/>
+          <outline text="Cost Function Limitations" _cerebroType="concept">
+            <outline text="Local Minimum Convergence" _cerebroType="insight"/>
+            <outline text="Optimization Landscape" _cerebroType="concept"/>
+          </outline>
+        </outline>
+      </outline>
+    </outline>
+  </body>
+</opml>

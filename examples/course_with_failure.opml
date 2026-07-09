@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<opml version="2.0">
+  <head>
+    <title>course_with_failure</title>
+    <expansionState>0</expansionState>
+  </head>
+  <body>
+    <outline text="course_with_failure">
+      <outline text="Lesson1">
+        <outline text="Core Concepts">
+          <outline text="Variables" _note="Store data" _cerebroType="concept"/>
+          <outline text="Functions" _note="Reuse code" _cerebroType="concept"/>
+          <outline text="Control Flow" _note="Manages logic" _cerebroType="concept"/>
+        </outline>
+        <outline text="Importance" _note="Crucial for building software" _cerebroType="insight"/>
+      </outline>
+    </outline>
+  </body>
+</opml>

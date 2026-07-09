@@ -1,0 +1,31 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:12.000
+Welcome to this introduction to neural networks. Today we will build an intuition for how these systems actually learn from data.
+
+00:00:12.000 --> 00:00:28.000
+At the core, a neural network is just a function. It takes an input vector, passes it through layers of weighted connections, and produces an output.
+
+00:00:28.000 --> 00:00:45.000
+Each connection has a weight, and each neuron applies an activation function. The activation introduces non-linearity, which is what lets the network model complex patterns.
+
+00:01:00.000 --> 00:01:18.000
+Let's talk about training. Training is the process of adjusting the weights so the network's predictions get closer to the truth. We measure error using a loss function.
+
+00:01:18.000 --> 00:01:36.000
+The most common approach is gradient descent. We compute the gradient of the loss with respect to each weight, then nudge the weights in the opposite direction of the gradient.
+
+00:01:36.000 --> 00:01:54.000
+Backpropagation is the algorithm that computes those gradients efficiently. It applies the chain rule from calculus, working backwards from the output layer to the input layer.
+
+00:02:10.000 --> 00:02:28.000
+A key danger is overfitting. This happens when the network memorizes the training data instead of learning general patterns. It performs well in training but poorly on new data.
+
+00:02:28.000 --> 00:02:46.000
+To fight overfitting we use regularization. Techniques like dropout, weight decay, and early stopping all encourage the network to stay simple and generalize better.
+
+00:03:00.000 --> 00:03:18.000
+Finally, remember that data quality matters more than model complexity. A clean, representative dataset will beat a fancy architecture trained on noise almost every time.
+
+00:03:18.000 --> 00:03:34.000
+That is the big picture. Networks are functions, training is optimization by gradient descent, and generalization is the real goal. Thanks for watching.
