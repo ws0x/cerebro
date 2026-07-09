@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 
 import pytest
 
@@ -81,18 +82,30 @@ def test_ingest_dispatch_routes_video_extension_to_load_video(tmp_path):
     assert len(transcript.segments) == 2
 
 
-def test_no_subtitle_and_no_whisper_raises_actionable_error(tmp_path):
+def test_no_subtitle_and_no_whisper_raises_actionable_error(tmp_path, monkeypatch):
+    # faster-whisper is an optional extra. Force the "not installed" branch via
+    # sys.modules rather than relying on the dev environment's actual install
+    # state, so this test is deterministic whether or not the extra is present.
+    monkeypatch.setitem(sys.modules, "faster_whisper", None)
     video = _build_mkv_without_subtitle(tmp_path)
     cache = Cache(root=tmp_path / "cache")
     with pytest.raises(VideoIngestError, match="faster-whisper"):
         load_video(video, cache=cache)
 
 
-def test_transcribe_with_whisper_not_installed_raises_actionable_error(tmp_path):
-    # faster-whisper is an optional extra; this environment doesn't have it,
-    # so the ImportError path itself is exercised for real, not mocked.
+def test_transcribe_with_whisper_not_installed_raises_actionable_error(tmp_path, monkeypatch):
+    monkeypatch.setitem(sys.modules, "faster_whisper", None)
     fake_audio = tmp_path / "audio.wav"
     fake_audio.write_bytes(b"\x00")
     cache = Cache(root=tmp_path / "cache")
     with pytest.raises(VideoIngestError, match="pip install cerebro\\[whisper\\]"):
         transcribe_with_whisper(fake_audio, cache=cache)
+
+
+def test_no_subtitle_uses_real_whisper_when_installed(tmp_path):
+    pytest.importorskip("faster_whisper")
+    video = _build_mkv_without_subtitle(tmp_path)  # silent audio -> fast, no speech expected
+    cache = Cache(root=tmp_path / "cache")
+    transcript = load_video(video, whisper_model="tiny", cache=cache)
+    assert transcript.title == "No Subs"
+    assert isinstance(transcript.segments, list)  # silent audio -> likely empty, must not raise
