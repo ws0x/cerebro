@@ -1,4 +1,4 @@
-from cerebro.cli import app
+from cerebro.cli import run
 
 if __name__ == "__main__":
-    app()
+    run()

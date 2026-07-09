@@ -154,17 +154,18 @@ cerebro
 ```
 
 ```
-Let's build a mind map. (Ctrl+C to cancel anytime)
+─────────────────────────────────── Source ────────────────────────────────────
+Ctrl+C to cancel anytime
 
 Paste a YouTube URL, playlist URL, or local file/folder path: examples/intro_to_neural_networks.vtt
 ✓ Detected: local file
 
-Processing level [brief/full/expert] (full): full
-Engine (auto picks Groq/Gemini if a key is set, else offline) [auto/groq/gemini/heuristic] (auto): auto
-  opml = imports everywhere · xmind = native, keeps relationships & icons
-Output format [opml/xmind] (opml): opml
+─────────────────────────────────── Options ───────────────────────────────────
+Processing level  →  Full — subtopics + key points (recommended)
+Engine             →  Auto — Groq/Gemini if a key is set, else offline
+Output format       →  OPML — imports into XMind, Freemind, most outliners
 Output path (mindmap.opml): my_first_map.opml
-
+───────────────────────────────────────────────────────────────────────────────
 ┌──────────────────── Ready ────────────────────┐
 │ Source  examples/intro_to_neural_networks.vtt │
 │ Type    local file                            │
@@ -172,9 +173,8 @@ Output path (mindmap.opml): my_first_map.opml
 │ Engine  auto                                  │
 │ Format  OPML                                  │
 │ Output  my_first_map.opml                     │
-└─────────────────────────────────────────────────┘
-
-Proceed? [y/n] (y): y
+└───────────────────────────────────────────────┘
+Proceed?  →  Yes, build it
 
 ✓ Transcript: Intro To Neural Networks — 257 words, 10 segments
 ✓ Map built with groq:llama-3.3-70b-versatile: 6 nodes, depth 4
@@ -207,10 +207,18 @@ cerebro
 cerebro interactive
 ```
 
-Paste a source, answer four short questions, confirm. It detects what you
-pasted — single video, playlist, course folder, or local file — and routes to
-exactly the same pipeline the flag-driven commands use underneath, so there's
-no behavioral difference, only convenience.
+Paste a source, pick your options with arrow keys, confirm. It detects what
+you pasted — single video, playlist, course folder, or local file — and
+routes to exactly the same pipeline the flag-driven commands use underneath,
+so there's no behavioral difference, only convenience.
+
+If the "Ready" summary isn't right, choose **Edit an answer** instead of
+proceeding — it jumps straight to the field you want to change and comes back
+to the summary, no need to start over. In a real terminal, every choice
+(level, engine, format, proceed/edit/cancel) is an arrow-key menu; if
+cerebro can't detect a real interactive terminal (piped input, some
+CI/scripting contexts), it automatically falls back to a plain typed-choice
+prompt instead of failing.
 
 ### Flags (recommended for scripting or repeat use)
 
@@ -414,7 +422,9 @@ source ──▶ ingest ──▶ Transcript ──▶ structure ──▶ MindM
 | `cerebro.batch` | Fan-out + merge for playlists and course folders |
 | `cerebro.llm` | Provider abstraction (Groq / Gemini / mock) |
 | `cerebro.cache` | Content-addressed caching |
-| `cerebro.ui` / `cerebro.cli` | Rich terminal UI, wizard, and Typer commands |
+| `cerebro.ui` | Rich banner, progress, and the in-terminal map preview |
+| `cerebro.wizard` | The guided interactive flow (arrow-key menus with a plain-prompt fallback) |
+| `cerebro.cli` | Typer commands (`map`, `batch`, `interactive`) |
 
 ## Development
 

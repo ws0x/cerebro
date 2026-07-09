@@ -16,6 +16,7 @@ dependencies = [
   "youtube-transcript-api>=0.6.2",
   "yt-dlp>=2024.1.0",
   "requests>=2.31",
+  "questionary>=2.0",
 ]
 
 [project.optional-dependencies]
@@ -23,7 +24,7 @@ dev = ["pytest>=8.0"]
 whisper = ["faster-whisper>=1.0"]
 
 [project.scripts]
-cerebro = "cerebro.cli:app"
+cerebro = "cerebro.cli:run"
 
 [tool.setuptools.packages.find]
 where = ["src"]

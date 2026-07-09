@@ -26,14 +26,13 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.progress import BarColumn, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.progress import Progress as RichProgress
-from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
 from . import __version__
 from .batch import BatchItem, run_batch
 from .cache import Cache
 from .convert import write_opml, write_xmind
-from .ingest import load_transcript, looks_like_youtube
+from .ingest import load_transcript
 from .ingest.folder import discover_course_sources
 from .ingest.playlist import is_playlist_url, load_playlist
 from .llm.base import LLMError
@@ -41,12 +40,21 @@ from .llm.config import ConfigError, load_env, resolve_provider
 from .structure import HeuristicStructurer
 from .structure.llm import LLMStructurer
 from .ui import print_banner, print_preview
+from .wizard import run_wizard
+
+_EPILOG = (
+    'Examples: cerebro (wizard)  |  cerebro map "URL" -l expert  |  '
+    'cerebro batch "playlist URL" --limit 10  |  cerebro batch ./course_folder --format xmind'
+)
 
 app = typer.Typer(
     add_completion=False,
     help="Turn video content into XMind-compatible smart mind maps. Run with no arguments for a guided wizard.",
+    epilog=_EPILOG,
 )
 console = Console()
+
+_HELP_REQUESTED = "--help" in sys.argv[1:]
 
 
 def _safe_filename(title: str) -> str:
@@ -55,32 +63,42 @@ def _safe_filename(title: str) -> str:
 
 
 def _structure(transcript, level, provider, no_cache):
-    """Build the map with the resolved engine, showing live stages and falling
-    back to the offline heuristic if an LLM call fails."""
+    """Build the map with the resolved engine, showing live progress and
+    falling back to the offline heuristic if an LLM call fails."""
     if provider is None:
         with console.status(f"[cyan]Structuring ({level})…", spinner="dots"):
             return HeuristicStructurer().structure(transcript, level=level)
 
-    with console.status("[cyan]Thinking…", spinner="dots") as status:
+    with RichProgress(
+        SpinnerColumn(),
+        TextColumn("[cyan]{task.description}"),
+        BarColumn(),
+        TextColumn("{task.completed}/{task.total}"),
+        TimeElapsedColumn(),
+        console=console,
+        transient=True,
+    ) as progress:
+        task = progress.add_task("Thinking…", total=1)
+
         def on_event(kind, **d):
             if kind == "map_start":
-                status.update(f"[cyan]Mapping {d['total']} segment(s)…")
+                progress.update(task, description="Mapping segments", total=d["total"], completed=0)
             elif kind == "map_progress":
-                status.update(f"[cyan]Mapping {d['done']}/{d['total']} segment(s)…")
+                progress.update(task, completed=d["done"])
             elif kind == "reduce_start":
-                status.update("[cyan]Reducing into a hierarchy…")
+                progress.update(task, description="Reducing into a hierarchy", total=1, completed=0)
             elif kind == "link_start":
-                status.update("[cyan]Detecting cross-links…")
+                progress.update(task, description="Detecting cross-links", total=1, completed=0)
 
         structurer = LLMStructurer(provider, Cache(enabled=not no_cache), on_event=on_event)
         try:
-            return structurer.structure(transcript, level=level)
+            mm = structurer.structure(transcript, level=level)
         except LLMError as exc:
-            status.stop()
-            console.print(
-                f"[yellow]! LLM engine failed ({exc}); falling back to heuristic.[/]"
-            )
+            progress.stop()
+            console.print(f"[yellow]! LLM engine failed ({exc}); falling back to heuristic.[/]")
             return HeuristicStructurer().structure(transcript, level=level)
+        progress.update(task, completed=progress.tasks[0].total)
+        return mm
 
 
 def _version_callback(value: bool):
@@ -97,21 +115,23 @@ def _main(
     ),
 ):
     """Cerebro root."""
+    if _HELP_REQUESTED:
+        return  # a --help lookup is a reference check, not a real run
     print_banner()
     load_env()
     if ctx.invoked_subcommand is None:
-        _interactive_wizard()
+        run_wizard(_do_map, _do_batch)
 
 
 @app.command()
 def map(
     source: str = typer.Argument(
-        ..., help="YouTube URL or local .srt/.vtt/.txt/.mp4/.mkv/.mov/.webm file."
+        ..., help="YouTube URL or local .srt/.vtt/.txt/.mp4/.mkv/.mov/.webm/.avi/.m4v file."
     ),
     level: str = typer.Option("full", "--level", "-l", help="brief | full | expert"),
     fmt: str = typer.Option("opml", "--format", "-f", help="opml | xmind"),
     out: Path = typer.Option(None, "--out", "-o", help="Output file path."),
-    engine: str = typer.Option("auto", "--engine", "-e", help="auto | groq | gemini | mock | heuristic"),
+    engine: str = typer.Option("auto", "--engine", "-e", help="auto | groq | gemini | heuristic"),
     no_cache: bool = typer.Option(False, "--no-cache", help="Disable the LLM response cache."),
     preview: bool = typer.Option(True, "--preview/--no-preview", help="Show the map in-terminal."),
 ):
@@ -167,7 +187,7 @@ def batch(
     level: str = typer.Option("full", "--level", "-l", help="brief | full | expert"),
     fmt: str = typer.Option("opml", "--format", "-f", help="opml | xmind"),
     out: Path = typer.Option(None, "--out", "-o", help="Output file path."),
-    engine: str = typer.Option("auto", "--engine", "-e", help="auto | groq | gemini | mock | heuristic"),
+    engine: str = typer.Option("auto", "--engine", "-e", help="auto | groq | gemini | heuristic"),
     workers: int = typer.Option(3, "--workers", "-w", help="Videos/lessons processed concurrently."),
     limit: int = typer.Option(None, "--limit", help="Process only the first N items."),
     no_cache: bool = typer.Option(False, "--no-cache", help="Disable the LLM response cache."),
@@ -281,77 +301,9 @@ def _do_batch(
 @app.command()
 def interactive():
     """Guided wizard: pick a source, level, engine, and format step by step."""
-    _interactive_wizard()
-
-
-def _detect_source_kind(source: str) -> str:
-    if is_playlist_url(source):
-        return "playlist"
-    if looks_like_youtube(source):
-        return "youtube"
-    if Path(source).is_dir():
-        return "folder"
-    if Path(source).exists():
-        return "file"
-    return "unknown"
-
-
-_KIND_LABEL = {
-    "playlist": "YouTube playlist (batch)",
-    "youtube": "YouTube video",
-    "folder": "local course folder (batch)",
-    "file": "local file",
-}
-
-
-def _interactive_wizard() -> None:
-    console.print("[bold cyan]Let's build a mind map.[/] [dim](Ctrl+C to cancel anytime)[/]\n")
-
-    while True:
-        source = Prompt.ask(
-            "[cyan]Paste a YouTube URL, playlist URL, or local file/folder path[/]"
-        ).strip()
-        kind = _detect_source_kind(source)
-        if kind == "unknown":
-            console.print(f"[red]✗ Not a recognizable URL or existing path: {source}[/]\n")
-            continue
-        break
-
-    console.print(f"[green]✓[/] Detected: [bold]{_KIND_LABEL[kind]}[/]\n")
-
-    level = Prompt.ask("[cyan]Processing level[/]", choices=["brief", "full", "expert"], default="full")
-    engine = Prompt.ask(
-        "[cyan]Engine[/] [dim](auto picks Groq/Gemini if a key is set, else offline)[/]",
-        choices=["auto", "groq", "gemini", "heuristic"],
-        default="auto",
-    )
-
-    console.print("[dim]  opml = imports everywhere · xmind = native, keeps relationships & icons[/]")
-    fmt_default = "xmind" if level == "expert" else "opml"
-    fmt = Prompt.ask("[cyan]Output format[/]", choices=["opml", "xmind"], default=fmt_default)
-
-    out_str = Prompt.ask("[cyan]Output path[/]", default=f"mindmap.{fmt}")
-    out = Path(out_str)
-
-    summary = Table.grid(padding=(0, 2))
-    summary.add_row("[dim]Source[/]", source)
-    summary.add_row("[dim]Type[/]", _KIND_LABEL[kind])
-    summary.add_row("[dim]Level[/]", level)
-    summary.add_row("[dim]Engine[/]", engine)
-    summary.add_row("[dim]Format[/]", fmt.upper())
-    summary.add_row("[dim]Output[/]", str(out))
-    console.print()
-    console.print(Panel(summary, title="[cyan]Ready[/]", border_style="cyan", expand=False))
-
-    if not Confirm.ask("\n[cyan]Proceed?[/]", default=True):
-        console.print("[dim]Cancelled.[/]")
-        raise typer.Exit()
-    console.print()
-
-    if kind in ("playlist", "folder"):
-        _do_batch(source, level, fmt, out, engine, workers=3, limit=None, no_cache=False, preview=True)
-    else:
-        _do_map(source, level, fmt, out, engine, no_cache=False, preview=True)
+    # print_banner()/load_env() already ran in the _main callback, which fires
+    # for every invocation regardless of which subcommand was requested.
+    run_wizard(_do_map, _do_batch)
 
 
 def _export(mm, fmt: str, out: Path | None, level: str, elapsed: float) -> None:
@@ -380,5 +332,14 @@ def _export(mm, fmt: str, out: Path | None, level: str, elapsed: float) -> None:
         console.print(f"[dim]Open directly in XMind: {written.name}[/]")
 
 
+def run() -> None:
+    """Entry point with graceful Ctrl+C handling (the wizard advertises this)."""
+    try:
+        app()
+    except KeyboardInterrupt:
+        console.print("\n[dim]Cancelled.[/]")
+        raise typer.Exit(code=130)
+
+
 if __name__ == "__main__":
-    app()
+    run()
