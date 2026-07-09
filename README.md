@@ -1,132 +1,447 @@
+<div align="center">
+
 # cerebro
 
-Turn video content into **XMind-compatible smart mind maps** — not flat summaries,
-but structured, hierarchical knowledge maps.
+**Turn video into structured knowledge — not just a summary.**
 
-Give it a YouTube URL, a local subtitle track, or a course folder; get back a
-mind map you can open directly in XMind (via OPML today, native `.xmind` soon).
+Point it at a YouTube video, a whole playlist, a course folder, or a local
+file. Get back a hierarchical, XMind-compatible mind map with real structure:
+topics, sub-points, cross-references, and icons — built by an LLM that
+*understands* the content, not a transcript-slicer that pretends to.
 
-```
-cerebro                                                    # guided wizard
-cerebro map "https://youtu.be/VIDEO_ID" --level full
-cerebro map examples/intro_to_neural_networks.vtt --level expert
-cerebro batch "https://youtube.com/playlist?list=..." --level full --limit 10
-cerebro batch path/to/course_folder --format xmind
-```
+[![CI](https://github.com/ws0x/cerebro/actions/workflows/ci.yml/badge.svg)](https://github.com/ws0x/cerebro/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](#license)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](#requirements)
 
-Bare `cerebro` (or `cerebro interactive`) launches a guided wizard — paste a
-source, answer a few prompts, done. It detects what you pasted (single video,
-playlist, course folder, local file) and routes to the same `map`/`batch`
-pipeline flag-driven use hits, so behavior is identical either way.
+</div>
 
-## Architecture
-
-The whole design turns on one decision: **the model never writes a file format.**
-Every source is normalized to a `Transcript`; a structurer turns that into a
-format-agnostic **IR** (`MindMap`); deterministic converters turn the IR into
-OPML / XMind / Markdown. Swap the model or the output format without touching
-anything else.
+---
 
 ```
-source ──▶ ingest ──▶ Transcript ──▶ structure ──▶ MindMap (IR) ──▶ convert ──▶ .opml / .xmind
-           (yt /                      (heuristic /                   (deterministic)
-            subs)                      LLM)
+┌───────────────────────────────────────┐
+│                                       │
+│   ___  ___  ___  ___  ___  ___  ___   │
+│  / __|| __|| _ \| __|| _ )| _ \/ _ \  │
+│ | (__ | _| |   /| _| | _ \|   / (_) | │
+│  \___||___||_|_\|___||___/|_|_\\___/  │
+│      video  ->  smart mind maps       │
+│                                       │
+└─────────────── cerebro ───────────────┘
 ```
 
-Modules:
+## Table of contents
 
-| Module | Role |
-|---|---|
-| `cerebro.ingest` | any source → `Transcript` (YouTube captions, `.srt/.vtt/.txt`) |
-| `cerebro.transcript` | the `Transcript` contract |
-| `cerebro.structure` | `Transcript` → `MindMap` IR (heuristic now, LLM next) |
-| `cerebro.ir` | the `MindMap` intermediate representation |
-| `cerebro.convert` | IR → OPML (XMind writer next) |
-| `cerebro.ui` | Rich banner, progress, in-terminal map preview |
-| `cerebro.cli` | Typer entry point |
+- [Why cerebro](#why-cerebro)
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Quick start](#quick-start)
+- [Two ways to use it](#two-ways-to-use-it)
+- [Command reference](#command-reference)
+- [Processing levels](#processing-levels)
+- [Choosing an engine](#choosing-an-engine)
+- [Output formats: OPML vs. XMind](#output-formats-opml-vs-xmind)
+- [Batch: playlists & course folders](#batch-playlists--course-folders)
+- [Local video: embedded subtitles & Whisper](#local-video-embedded-subtitles--whisper)
+- [Caching](#caching)
+- [Examples](#examples)
+- [Troubleshooting](#troubleshooting)
+- [How it works](#how-it-works)
+- [Development](#development)
+- [License](#license)
+
+## Why cerebro
+
+Most "video to notes" tools do one thing: dump a transcript through a
+summarizer and hand you a wall of bullet points. That's not a mind map — it's
+a shorter wall of text.
+
+cerebro is built around a different idea: a real map-reduce-link pipeline that
+reads a transcript the way a person would while taking notes — grouping
+related ideas, promoting recurring themes into parents, demoting details into
+leaves, and drawing connections *across* branches that a flat summary would
+never surface. The output is a genuine hierarchy you can drop straight into
+XMind and start editing.
+
+A few things that make it worth trying:
+
+- **Actually smart, not just extractive.** Real map → reduce → link pipeline, with an explicit anti-hallucination grounding rule so it doesn't invent facts your source never said.
+- **Free by default.** Works with free-tier [Groq](https://console.groq.com/keys) or [Gemini](https://aistudio.google.com/apikey) keys — no paid API required.
+- **Works fully offline too.** No key at all → falls back to a deterministic heuristic engine. No internet for the *video* → local files, embedded subtitles, and Whisper transcription all work with zero network calls.
+- **Every real source.** Single YouTube videos, whole playlists, local course folders, and local video files — with or without subtitles.
+- **Two honest output formats.** Universal OPML (imports everywhere) or native `.xmind` (keeps relationship arrows and icons that OPML physically can't represent).
+- **Batch-safe.** A 40-video playlist doesn't die because one video is private — failures are reported per-item, never fatal.
+- **Fast.** Concurrent ingestion, concurrent LLM calls, and a content-addressed cache mean re-runs and level upgrades (brief → full → expert) cost almost nothing.
+
+## Requirements
+
+- **Python 3.10+** (only if installing via pip/pipx — the standalone binary needs nothing)
+- **[ffmpeg](https://ffmpeg.org/download.html)** on your `PATH` — required for local video files (embedded subtitle extraction and audio extraction for Whisper)
+- A free **[Groq](https://console.groq.com/keys)** or **[Gemini](https://aistudio.google.com/apikey)** API key for smart structuring (optional — cerebro works without one, just less "smart")
+
+## Installation
+
+Pick whichever fits how you work.
+
+### Option 1 — pipx (recommended)
+
+The cleanest way to get a global `cerebro` command without touching your
+system Python:
+
+```bash
+pipx install git+https://github.com/ws0x/cerebro.git
+cerebro --version
+```
+
+### Option 2 — pip
+
+```bash
+pip install git+https://github.com/ws0x/cerebro.git
+```
+
+### Option 3 — standalone binary (no Python required)
+
+For Windows users who don't want a Python environment at all. Build it
+yourself from source (see [Development](#development)) — it produces a single
+`cerebro.exe` you can drop anywhere and run directly. The binary supports
+everything **except** Whisper transcription (that path needs the separate
+`[whisper]` extra); embedded-subtitle extraction still works since it's just
+an `ffmpeg` call.
+
+### Option 4 — from source (for development)
+
+```bash
+git clone https://github.com/ws0x/cerebro.git
+cd cerebro
+python -m venv .venv
+
+# Windows
+.venv\Scripts\pip install -e ".[dev]"
+
+# macOS / Linux
+.venv/bin/pip install -e ".[dev]"
+```
+
+### Want offline Whisper transcription too?
+
+```bash
+pip install "cerebro[whisper]"
+```
+
+This pulls in `faster-whisper` (a heavier, optional dependency) so cerebro can
+transcribe local video that has no subtitle track at all — fully offline,
+no API key.
+
+## Quick start
+
+**1. Grab a free API key** (30 seconds, either one works):
+
+| Provider | Get a key | Notes |
+|---|---|---|
+| Groq | [console.groq.com/keys](https://console.groq.com/keys) | Fastest — Llama 3.3 70B, typically 2–5s per video |
+| Gemini | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) | Slower but stays closer to the literal source text |
+
+**2. Save it:**
+
+```bash
+cp .env.example .env
+# open .env, paste your key into GROQ_API_KEY= or GEMINI_API_KEY=
+```
+
+**3. Run cerebro with no arguments** — the wizard walks you through the rest:
+
+```bash
+cerebro
+```
+
+```
+Let's build a mind map. (Ctrl+C to cancel anytime)
+
+Paste a YouTube URL, playlist URL, or local file/folder path: examples/intro_to_neural_networks.vtt
+✓ Detected: local file
+
+Processing level [brief/full/expert] (full): full
+Engine (auto picks Groq/Gemini if a key is set, else offline) [auto/groq/gemini/heuristic] (auto): auto
+  opml = imports everywhere · xmind = native, keeps relationships & icons
+Output format [opml/xmind] (opml): opml
+Output path (mindmap.opml): my_first_map.opml
+
+┌──────────────────── Ready ────────────────────┐
+│ Source  examples/intro_to_neural_networks.vtt │
+│ Type    local file                            │
+│ Level   full                                  │
+│ Engine  auto                                  │
+│ Format  OPML                                  │
+│ Output  my_first_map.opml                     │
+└─────────────────────────────────────────────────┘
+
+Proceed? [y/n] (y): y
+
+✓ Transcript: Intro To Neural Networks — 257 words, 10 segments
+✓ Map built with groq:llama-3.3-70b-versatile: 6 nodes, depth 4
+
+🧠 Neural Networks
+└── ◆ Neural Network Basics
+    ├── 🔑 Neural Network Function
+    └── ○ Training Process
+        ├── ⚠️ Overfitting Prevention
+        └── ✨ Data Quality Importance
+
+┌────────── Done ───────────┐
+│ Output  my_first_map.opml │
+│ Format  OPML              │
+│ Level   full              │
+│ Time    2.13s             │
+└───────────────────────────┘
+Import into XMind: File → Import → OPML → my_first_map.opml
+```
+
+**4. Open it in XMind:** `File → Import → OPML → my_first_map.opml`. Done.
+
+## Two ways to use it
+
+### The wizard (recommended if you don't want to remember flags)
+
+```bash
+cerebro
+# or explicitly:
+cerebro interactive
+```
+
+Paste a source, answer four short questions, confirm. It detects what you
+pasted — single video, playlist, course folder, or local file — and routes to
+exactly the same pipeline the flag-driven commands use underneath, so there's
+no behavioral difference, only convenience.
+
+### Flags (recommended for scripting or repeat use)
+
+```bash
+cerebro map "https://youtu.be/dQw4w9WgXcQ" --level expert --format xmind
+cerebro batch "https://youtube.com/playlist?list=..." --limit 10
+```
+
+Every option below applies to both.
+
+## Command reference
+
+### `cerebro map SOURCE [options]`
+
+Build a mind map from a single source.
+
+`SOURCE` — a YouTube URL, or a local `.srt` / `.vtt` / `.txt` / `.mp4` /
+`.mkv` / `.mov` / `.webm` / `.avi` / `.m4v` file.
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--level`, `-l` | `full` | `brief` \| `full` \| `expert` — see [Processing levels](#processing-levels) |
+| `--engine`, `-e` | `auto` | `auto` \| `groq` \| `gemini` \| `heuristic` — see [Choosing an engine](#choosing-an-engine) |
+| `--format`, `-f` | `opml` | `opml` \| `xmind` — see [Output formats](#output-formats-opml-vs-xmind) |
+| `--out`, `-o` | *(derived from title)* | Output file path |
+| `--no-cache` | off | Disable the response cache for this run |
+| `--preview` / `--no-preview` | preview on | Show/hide the in-terminal tree before writing the file |
+
+### `cerebro batch SOURCE [options]`
+
+Build **one combined** mind map from a YouTube playlist or a local course
+folder — every item becomes a branch under a shared root.
+
+`SOURCE` — a YouTube playlist URL, or a local folder path.
+
+All `map` flags apply, plus:
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--workers`, `-w` | `3` | How many videos/lessons process concurrently |
+| `--limit` | *(none)* | Only process the first N items — useful for a big playlist |
+
+### `cerebro interactive`
+
+Launches the guided wizard explicitly (same as running `cerebro` with no
+arguments).
+
+### `cerebro --version`
+
+Prints the installed version and exits.
 
 ## Processing levels
 
-| Level | Depth | Pipeline |
+Pick how deep the map should go. Each level is a genuinely different pipeline,
+not just a truncated version of the next one up.
+
+| Level | What you get | Pipeline |
 |---|---|---|
-| `brief` | main topics only | segment → reduce |
-| `full` | subtopics + key points | segment → map → reduce |
-| `expert` | + relationships, notes, insights | full + cross-link detection |
+| `brief` | Main topics only, minimal nesting — a fast overview | segment → reduce |
+| `full` | Subtopics and key points, 3–4 levels deep | segment → map → reduce |
+| `expert` | Everything in `full`, plus concepts, examples, actionable insights, **and cross-branch relationship arrows** | full + link detection |
 
-## Engines
+Only `expert` produces relationships (the labeled arrows connecting nodes in
+different branches — e.g. "Overfitting *prevented by* Regularization"), which
+is why `--format xmind` matters most at that level: OPML has no way to
+represent them.
 
-Set a free key in `.env` (see `.env.example`) and pick an engine:
+## Choosing an engine
 
-```
-cerebro map <src> --engine groq      # free, fast — console.groq.com/keys
-cerebro map <src> --engine gemini    # free — aistudio.google.com/apikey
-cerebro map <src> --engine auto      # groq→gemini→heuristic, whatever's available
-cerebro map <src> --engine heuristic # offline, no key, deterministic
-```
+| Engine | Cost | Speed | Notes |
+|---|---|---|---|
+| `auto` *(default)* | free | — | Uses Groq if `GROQ_API_KEY` is set, else Gemini, else falls back to `heuristic` |
+| `groq` | free tier | fastest (typically 2–5s) | Llama 3.3 70B via [Groq](https://console.groq.com/keys) |
+| `gemini` | free tier | slower (~20–30s) | Gemini 2.5 Flash via [Google AI Studio](https://aistudio.google.com/apikey), stays closer to the literal source wording |
+| `heuristic` | free, no key | instant | Fully offline, deterministic sentence-chunking — no AI, structurally correct but not "smart" |
 
-The LLM engine runs **map → reduce → link**: extract each segment, merge into a
-smart hierarchy, then (expert level) detect cross-branch relationships. Every
-call is content-addressed cached, so re-runs and level upgrades are near-free.
-If no key is present or a call fails, it degrades gracefully to the heuristic.
+Set whichever key(s) you have in `.env` (copy `.env.example` to get started).
+If a live call fails mid-run — bad key, rate limit, network blip — cerebro
+**automatically falls back to the heuristic engine** rather than crashing, so
+a run never just dies.
 
-Output formats: `--format opml` (universal, imports everywhere) or
-`--format xmind` (native — keeps relationships + markers/icons).
+## Output formats: OPML vs. XMind
 
-## Batch
+| | OPML | Native `.xmind` |
+|---|---|---|
+| Hierarchy & content | ✅ full fidelity | ✅ full fidelity |
+| Notes & timestamps | ✅ | ✅ |
+| Markers / icons (🔑 💡 ⚠️ ✅ ✨) | ❌ | ✅ |
+| Relationship arrows (`expert` level) | ❌ | ✅ |
+| Opens in | XMind, Freemind, MindNode, Workflowy, most outliners | XMind only (native) |
+| Import step | `File → Import → OPML` | Just double-click |
 
-`cerebro batch <playlist-url-or-folder>` fans out ingest+structure across every
-video/lesson concurrently (`--workers`, default 3; capped inner LLM concurrency
-per video to protect free-tier rate limits), then merges each into one combined
-map as a branch under a shared root. A failing item (private video, no
-captions, missing subtitle) is reported and skipped — never fatal. Course
-folders match videos to sidecar subtitle files by filename and report any
-video with no match. `--limit N` caps how many items are processed.
+**Rule of thumb:** use `opml` for `brief`/`full` maps or if you want maximum
+compatibility; use `xmind` for `expert` maps so you don't lose the
+relationships and icons the model worked out. cerebro warns you if you export
+an `expert` map as OPML and would be dropping relationships.
 
-## Local video
+## Batch: playlists & course folders
 
-`.mp4`/`.mkv`/`.mov`/`.webm`/`.avi`/`.m4v` are accepted directly by `map` and
-`batch`. Cerebro tries, in order: (1) an embedded text subtitle track
-(subrip/ass/webvtt/mov_text), demuxed via ffmpeg — fast, exact; (2) Whisper
-transcription of the audio track (`pip install cerebro[whisper]`) — slower,
-fully offline, works on anything with speech. Image-based subtitle codecs
-(PGS/VobSub, common in some ripped `.mkv`s) aren't supported — they'd need OCR.
-
-## Status
-
-Done and **live-validated end-to-end** (real Groq + Gemini keys, real YouTube
-playlist, real ffmpeg video processing): YouTube / subtitle / local-video
-ingest (with Whisper fallback) → heuristic **and** LLM (Groq/Gemini)
-structurer → **OPML and native `.xmind`** export (relationships + markers) →
-**batch** (playlists + course folders, concurrent, partial-failure-safe). Rich
-CLI with live progress bar. Content-addressed cache. 19 tests pass — this
-covers every input source and output format from the original spec.
-
-## Develop
-
-```
-py -3 -m venv .venv
-.venv\Scripts\pip install -e ".[dev]"
-.venv\Scripts\pytest
+```bash
+cerebro batch "https://youtube.com/playlist?list=PL..." --level full --limit 20
+cerebro batch ./my_course_folder --format xmind
 ```
 
-## Distribute
+- **YouTube playlists** are listed without downloading anything (fast, via
+  `yt-dlp`'s flat extraction), then every video is ingested and structured
+  concurrently.
+- **Course folders** match each video file to a same-named subtitle file
+  (`lesson1.mp4` + `lesson1.srt`) when present. Videos with no sidecar
+  subtitle aren't skipped — they're processed via embedded-subtitle
+  extraction or Whisper, cerebro just tells you up front that those will be
+  slower.
+- **Files/lessons are numbered-sort aware** — "Lesson 2" sorts before "Lesson
+  10", not after.
+- **One bad item never kills the batch.** A private video, a missing
+  transcript, a corrupt file — each failure is caught, reported by name, and
+  skipped. You get a combined map from whatever succeeded.
+- Every successful item becomes its own top-level branch in the final map,
+  titled after the source (playlist video title or lesson filename).
 
-**pipx / pip** — already packaged correctly (`pyproject.toml` entry point):
+## Local video: embedded subtitles & Whisper
+
+Point `map` or `batch` straight at a `.mp4`/`.mkv`/`.mov`/`.webm`/`.avi`/`.m4v`
+file — no manual subtitle extraction needed. cerebro tries, in order:
+
+1. **Embedded text subtitle track** (`subrip`/`ass`/`webvtt`/`mov_text`
+   codecs) — demuxed via `ffmpeg`. Fast, exact, no AI involved.
+2. **Whisper transcription** of the audio — fully offline, works on anything
+   with speech, needs `pip install cerebro[whisper]`.
+
+Image-based subtitle formats (PGS/VobSub, common in some ripped `.mkv` files)
+aren't supported — those need OCR, which is out of scope.
+
+Whisper transcriptions are cached, so re-processing the same file (e.g. at a
+different level) never re-transcribes.
+
+## Caching
+
+Every expensive step — a transcription, a map/reduce/link LLM call — is
+cached by a content hash of its inputs (provider, model, prompt version,
+level, text). Practical effect: re-running the same video, or upgrading
+`brief` → `full` → `expert`, reuses everything it can and only pays for what
+actually changed. Pass `--no-cache` to force a clean run.
+
+## Examples
+
+The [`examples/`](examples/) folder has real, live-generated output you can
+inspect or import directly — subtitle fixtures, a synthetic course folder, and
+`.opml`/`.xmind` files produced by actual Groq and Gemini runs — useful as a
+reference for what output quality to expect at each level.
+
+## Troubleshooting
+
+**`ffmpeg not found on PATH`** — install ffmpeg and make sure it's on your
+`PATH`. Only needed for local video files; YouTube and subtitle-file sources
+don't need it.
+
+**`GROQ_API_KEY not set` / `GEMINI_API_KEY not set`** — you asked for a
+specific engine (`--engine groq`) but didn't set that key. Either add it to
+`.env`, or use `--engine auto` to let cerebro pick whatever's available (or
+fall back to offline).
+
+**No API key found — using the offline heuristic engine** — not an error,
+just a heads-up. The map will be structurally correct but won't have real
+AI-driven grouping. Add a free key to unlock that.
+
+**A relationship count of 0 at `expert` level** — relationships only appear
+when there are enough distinct branches for the model to meaningfully connect;
+very short sources may not produce any.
+
+**`No subtitle track found and faster-whisper is not installed`** — the video
+has no embedded subtitles and Whisper isn't installed. Run
+`pip install cerebro[whisper]`.
+
+**Import into XMind looks flat / missing arrows** — you exported as `--format
+opml`. OPML can't represent relationship arrows or icons; re-export with
+`--format xmind`.
+
+## How it works
+
+The core design decision: **the model never writes a file format.** Every
+source is normalized into a `Transcript`; a structurer (heuristic or LLM)
+turns that into a format-agnostic intermediate representation (`MindMap`);
+deterministic converters turn the IR into OPML or XMind. This is what makes
+output *reliably* importable — a converter never makes a syntax mistake the
+way an LLM asked to hand-write JSON/XML sometimes would.
 
 ```
-pipx install .          # or: pip install .
-cerebro                 # entry point resolves anywhere
+source ──▶ ingest ──▶ Transcript ──▶ structure ──▶ MindMap (IR) ──▶ convert ──▶ .opml / .xmind
+        (YouTube /                 (heuristic or                  (deterministic,
+         subtitle /                 map→reduce→link                always valid)
+         local video)               via Groq/Gemini)
 ```
 
-**Standalone binary** — no Python required. Built with PyInstaller against the
-*base* dependency set (`faster_whisper`/`ctranslate2`/`av`/`tokenizers`
-excluded — keeps it ~23MB instead of ~99MB). The binary supports everything
-except Whisper transcription; embedded-subtitle extraction still works since
-that's just an `ffmpeg` subprocess call. Users who want Whisper should
-`pip install cerebro[whisper]` instead of using the binary.
+| Module | Role |
+|---|---|
+| `cerebro.ingest` | Any source → `Transcript` (YouTube, playlists, subtitles, local video) |
+| `cerebro.structure` | `Transcript` → `MindMap` IR (heuristic, or LLM map→reduce→link) |
+| `cerebro.ir` | The `MindMap` intermediate representation itself |
+| `cerebro.convert` | IR → OPML / native XMind |
+| `cerebro.batch` | Fan-out + merge for playlists and course folders |
+| `cerebro.llm` | Provider abstraction (Groq / Gemini / mock) |
+| `cerebro.cache` | Content-addressed caching |
+| `cerebro.ui` / `cerebro.cli` | Rich terminal UI, wizard, and Typer commands |
 
+## Development
+
+```bash
+git clone https://github.com/ws0x/cerebro.git
+cd cerebro
+python -m venv .venv
+.venv\Scripts\pip install -e ".[dev]"   # .venv/bin/pip on macOS/Linux
+.venv\Scripts\pytest                    # run the test suite
 ```
+
+CI runs the full suite on every push across Python 3.11 and 3.13 — see the
+badge at the top of this file.
+
+### Building the standalone binary
+
+```bash
 .venv\Scripts\pip install pyinstaller
-.venv\Scripts\python -m PyInstaller cerebro.spec   # reproducible: see cerebro.spec
-# -> dist\cerebro.exe, single file, run from anywhere
+.venv\Scripts\python -m PyInstaller cerebro.spec
+# -> dist\cerebro.exe
 ```
+
+`cerebro.spec` deliberately excludes the Whisper dependency chain
+(`faster_whisper`/`ctranslate2`/`av`/`tokenizers`) to keep the binary small
+(~23MB instead of ~99MB); users who need offline Whisper transcription should
+install via `pip install cerebro[whisper]` instead.
+
+## License
+
+MIT
