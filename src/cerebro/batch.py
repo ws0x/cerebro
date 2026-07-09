@@ -11,11 +11,14 @@ from __future__ import annotations
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 
 from .ingest import load_transcript
 from .ir import MindMap, Node, NodeType, Relationship
 from .structure.base import Structurer
+
+if TYPE_CHECKING:
+    from .cache import Cache
 
 
 @dataclass
@@ -39,13 +42,14 @@ def run_batch(
     title: str,
     max_workers: int = 3,
     on_event: Callable[..., None] | None = None,
+    cache: "Cache | None" = None,
 ) -> tuple[MindMap, list[BatchOutcome]]:
     on_event = on_event or (lambda *a, **k: None)
 
     def _process(item: BatchItem) -> BatchOutcome:
         t0 = time.perf_counter()
         try:
-            transcript = load_transcript(item.source)
+            transcript = load_transcript(item.source, cache=cache)
             mm = structurer_factory().structure(transcript, level=level)
             return BatchOutcome(item.label, mm, None, time.perf_counter() - t0)
         except Exception as exc:  # an item's failure must not abort the batch

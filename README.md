@@ -282,6 +282,10 @@ All `map` flags apply, plus:
 Launches the guided wizard explicitly (same as running `cerebro` with no
 arguments).
 
+### `cerebro cache stats` / `cerebro cache clear`
+
+Inspect or wipe the response cache — see [Caching](#caching).
+
 ### `cerebro --version`
 
 Prints the installed version and exits.
@@ -378,6 +382,15 @@ cached by a content hash of its inputs (provider, model, prompt version,
 level, text). Practical effect: re-running the same video, or upgrading
 `brief` → `full` → `expert`, reuses everything it can and only pays for what
 actually changed. Pass `--no-cache` to force a clean run.
+
+The cache lives at `~/.cerebro/cache` — a stable location so it's actually
+shared across runs regardless of which directory you're in when you invoke
+the globally-installed `cerebro` command:
+
+```bash
+cerebro cache stats       # location, entry count, total size
+cerebro cache clear       # wipe it (asks for confirmation unless --yes)
+```
 
 ## Examples
 

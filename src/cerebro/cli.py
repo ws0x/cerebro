@@ -63,7 +63,7 @@ def _safe_filename(title: str) -> str:
     return (name or "mindmap")[:80]
 
 
-def _structure(transcript, level, provider, no_cache):
+def _structure(transcript, level, provider, cache):
     """Build the map with the resolved engine, showing live progress and
     falling back to the offline heuristic if an LLM call fails."""
     if provider is None:
@@ -91,7 +91,7 @@ def _structure(transcript, level, provider, no_cache):
             elif kind == "link_start":
                 progress.update(task, description="Detecting cross-links", total=1, completed=0)
 
-        structurer = LLMStructurer(provider, Cache(enabled=not no_cache), on_event=on_event)
+        structurer = LLMStructurer(provider, cache, on_event=on_event)
         try:
             mm = structurer.structure(transcript, level=level)
         except LLMError as exc:
@@ -144,10 +144,11 @@ def _do_map(
     source: str, level: str, fmt: str, out: Path | None, engine: str, no_cache: bool, preview: bool
 ) -> None:
     t0 = time.perf_counter()
+    cache = Cache(enabled=not no_cache)
 
     try:
         with console.status("[cyan]Loading transcript…", spinner="dots"):
-            transcript = load_transcript(source)
+            transcript = load_transcript(source, cache=cache)
     except Exception as exc:
         console.print(f"[red]✗ Failed to load transcript: {exc}[/]")
         raise typer.Exit(code=1)
@@ -167,7 +168,7 @@ def _do_map(
     if provider is None and engine == "auto":
         console.print("[yellow]![/] No API key found — using the offline heuristic engine.")
 
-    mm = _structure(transcript, level, provider, no_cache)
+    mm = _structure(transcript, level, provider, cache)
     console.print(
         f"[green]✓[/] Map built with [bold]{engine_label}[/]: "
         f"{mm.node_count()} nodes, depth {mm.depth()}"
@@ -279,7 +280,7 @@ def _do_batch(
                     failures.append((d["label"], d["error"]))
 
         combined, outcomes = run_batch(
-            items, structurer_factory, level, title, max_workers=workers, on_event=on_event
+            items, structurer_factory, level, title, max_workers=workers, on_event=on_event, cache=cache
         )
 
     ok_count = sum(1 for o in outcomes if o.mindmap is not None)
@@ -305,6 +306,51 @@ def interactive():
     # print_banner()/load_env() already ran in the _main callback, which fires
     # for every invocation regardless of which subcommand was requested.
     run_wizard(_do_map, _do_batch)
+
+
+cache_app = typer.Typer(add_completion=False, help="Inspect or clear the response cache.")
+app.add_typer(cache_app, name="cache")
+
+
+def _human_size(n: int) -> str:
+    size = float(n)
+    for unit in ("B", "KB", "MB", "GB"):
+        if size < 1024 or unit == "GB":
+            return f"{size:.0f}{unit}" if unit == "B" else f"{size:.1f}{unit}"
+        size /= 1024
+    return f"{size:.1f}GB"
+
+
+@cache_app.command("stats")
+def cache_stats():
+    """Show the cache location, entry count, and total size."""
+    cache = Cache()
+    count, total_bytes = cache.stats()
+    table = Table.grid(padding=(0, 2))
+    table.add_row("[dim]Location[/]", str(cache.root))
+    table.add_row("[dim]Entries[/]", str(count))
+    table.add_row("[dim]Size[/]", _human_size(total_bytes))
+    console.print(Panel(table, title="[cyan]Cache[/]", border_style="cyan", expand=False))
+
+
+@cache_app.command("clear")
+def cache_clear(
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip the confirmation prompt."),
+):
+    """Delete all cached responses and transcriptions."""
+    cache = Cache()
+    count, total_bytes = cache.stats()
+    if count == 0:
+        console.print("[dim]Cache is already empty.[/]")
+        raise typer.Exit()
+    if not yes:
+        from rich.prompt import Confirm
+
+        if not Confirm.ask(f"Delete {count} cached entries ({_human_size(total_bytes)})?", default=False):
+            console.print("[dim]Cancelled.[/]")
+            raise typer.Exit()
+    removed = cache.clear()
+    console.print(f"[green]✓[/] Removed {removed} cached entries.")
 
 
 def _export(mm, fmt: str, out: Path | None, level: str, elapsed: float) -> None:

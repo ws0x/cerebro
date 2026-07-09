@@ -8,8 +8,12 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ..transcript import Transcript
+
+if TYPE_CHECKING:
+    from ..cache import Cache
 
 _YOUTUBE_RE = re.compile(r"(youtube\.com|youtu\.be)", re.IGNORECASE)
 _SUBTITLE_EXTS = {".vtt", ".srt", ".txt"}
@@ -20,8 +24,12 @@ def looks_like_youtube(source: str) -> bool:
     return bool(_YOUTUBE_RE.search(source))
 
 
-def load_transcript(source: str) -> Transcript:
-    """Load a transcript from a URL or local file path."""
+def load_transcript(source: str, cache: "Cache | None" = None) -> Transcript:
+    """Load a transcript from a URL or local file path.
+
+    ``cache`` is only used by the local-video path (Whisper transcription is
+    the one expensive step in ingest); other sources ignore it.
+    """
     if looks_like_youtube(source):
         from .youtube import load_youtube
 
@@ -37,7 +45,7 @@ def load_transcript(source: str) -> Transcript:
         if ext in _VIDEO_EXTS:
             from .video import load_video
 
-            return load_video(path)
+            return load_video(path, cache=cache)
         raise ValueError(f"Unsupported file type: {ext} ({path})")
 
     raise ValueError(
