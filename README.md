@@ -446,10 +446,19 @@ source ──▶ ingest ──▶ Transcript ──▶ structure ──▶ MindM
          local video)               via Groq/Gemini)
 ```
 
+Before the MAP stage, a long transcript is split into chunks the model can
+digest individually. Splitting purely by word count can slice a chunk
+mid-topic — half of one idea, half of another — so cerebro instead detects
+genuine topic shifts (a real vocabulary change between adjacent stretches of
+talk, not embeddings — that would mean a heavy ML dependency this project
+deliberately keeps out of the base install) and prefers to cut there, with the
+word-count budget staying only as a hard ceiling.
+
 | Module | Role |
 |---|---|
 | `cerebro.ingest` | Any source → `Transcript` (YouTube, playlists, subtitles, local video) |
 | `cerebro.structure` | `Transcript` → `MindMap` IR (heuristic, or LLM map→reduce→link) |
+| `cerebro.structure.segment` | Topic-boundary-aware chunking before the MAP stage (lexical cohesion, no embeddings needed) |
 | `cerebro.ir` | The `MindMap` intermediate representation itself |
 | `cerebro.convert` | IR → OPML / native XMind |
 | `cerebro.batch` | Fan-out + merge for playlists and course folders |

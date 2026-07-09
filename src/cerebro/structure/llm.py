@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
 from typing import Callable
 
 from ..cache import Cache
@@ -24,35 +23,9 @@ from ..ir import MindMap, Node, NodeType, Relationship
 from ..llm.base import LLMError, LLMProvider
 from ..prompts import LINK_SYSTEM, MAP_SYSTEM, PROMPT_VERSION, reduce_system
 from ..transcript import Transcript
+from .segment import Chunk, chunk_transcript
 
 _MAX_WORDS = {"brief": 2000, "full": 1400, "expert": 1200}
-
-
-@dataclass
-class Chunk:
-    text: str
-    start: float
-
-
-def chunk_transcript(transcript: Transcript, max_words: int) -> list[Chunk]:
-    chunks: list[Chunk] = []
-    cur: list[str] = []
-    cur_words = 0
-    start: float | None = None
-    for seg in transcript.segments:
-        text = seg.text.strip()
-        if not text:
-            continue
-        if start is None:
-            start = seg.start
-        cur.append(text)
-        cur_words += len(text.split())
-        if cur_words >= max_words:
-            chunks.append(Chunk(text=" ".join(cur), start=start or 0.0))
-            cur, cur_words, start = [], 0, None
-    if cur:
-        chunks.append(Chunk(text=" ".join(cur), start=start or 0.0))
-    return chunks
 
 
 def _coerce_type(value) -> NodeType:
