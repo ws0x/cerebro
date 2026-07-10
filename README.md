@@ -168,16 +168,20 @@ cerebro
 
 ```
 ─────────────────────────────────── Source ────────────────────────────────────
-Ctrl+C to cancel anytime
+What are you turning into a mind map?
+› YouTube video or playlist
+  Local video — single file or a folder of lessons
+  PDF file
+  Folder structure — map how it's organized, not its contents (cerebro tree)
 
-Paste a YouTube URL, playlist URL, or local file/folder path: examples/intro_to_neural_networks.vtt
+Path to a video file or a folder of lessons: examples/intro_to_neural_networks.vtt
 ✓ Detected: local file
 
 ─────────────────────────────────── Options ───────────────────────────────────
 Processing level  →  Full — subtopics + key points (recommended)
 Engine             →  Auto — Groq/Gemini if a key is set, else offline
 Output format       →  OPML — imports into XMind, Freemind, most outliners
-Output path (mindmap.opml): my_first_map.opml
+Output path (my_first_map.opml):
 ───────────────────────────────────────────────────────────────────────────────
 ┌──────────────────── Ready ────────────────────┐
 │ Source  examples/intro_to_neural_networks.vtt │
@@ -208,6 +212,25 @@ Proceed?  →  Yes, build it
 Import into XMind: File → Import → OPML → my_first_map.opml
 ```
 
+The wizard leads with an explicit choice of what you're turning into a mind
+map (not a "paste anything and hope it's detected right" text box) — one of
+cerebro's four real entry points, `cerebro tree` included, which used to be
+invisible unless you already knew the flag existed. A few other things worth
+knowing about it:
+
+- **Clipboard-aware.** Copy a YouTube URL or a local path before running
+  `cerebro`, and the matching step offers it as a ready-to-confirm default —
+  press Enter to use it, or just type over it.
+- **Path autocomplete.** File/folder prompts are backed by real Tab-completion
+  through the filesystem, not a blind text box.
+- **Every step can go back.** Type `back` on a text/path prompt, or pick
+  "← Back" from a menu, to fix an earlier answer without restarting — the
+  previous value comes back pre-filled, ready to edit rather than retype.
+- **Failures don't throw the run away.** A bad URL that only breaks once
+  cerebro actually tries to fetch it, a network blip, an output path that
+  already exists — none of these discard everything you already answered.
+  You get a chance to fix just the one thing and continue.
+
 **4. Open it in XMind:** `File → Import → OPML → my_first_map.opml`. Done.
 
 ## Two ways to use it
@@ -220,10 +243,13 @@ cerebro
 cerebro interactive
 ```
 
-Paste a source, pick your options with arrow keys, confirm. It detects what
-you pasted — single video, playlist, course folder, or local file — and
-routes to exactly the same pipeline the flag-driven commands use underneath,
-so there's no behavioral difference, only convenience.
+Pick what you're turning into a mind map (YouTube, local video, PDF, or a
+`cerebro tree` folder-structure map), give the source, pick your options with
+arrow keys, confirm. It routes to exactly the same pipeline the flag-driven
+commands use underneath, so there's no behavioral difference, only
+convenience — plus clipboard-suggested sources, filesystem-path
+autocomplete, and step-by-step "back" navigation (see [Quick start](#quick-start)
+for details on all three).
 
 If the "Ready" summary isn't right, choose **Edit an answer** instead of
 proceeding — it jumps straight to the field you want to change and comes back

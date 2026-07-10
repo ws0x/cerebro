@@ -182,6 +182,7 @@ def run_diagnostics(
         ("pathspec", "pathspec"),
         ("pydantic", "pydantic"),
         ("fitz", "pymupdf"),
+        ("pyperclip", "pyperclip"),
     ):
         ok = _importable(mod)
         checks.append(Check(

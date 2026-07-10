@@ -312,7 +312,7 @@ def _main(
         print_banner()
     load_env()
     if ctx.invoked_subcommand is None:
-        run_wizard(_do_map, _do_batch)
+        run_wizard(_do_map, _do_batch, _do_tree)
 
 
 @app.command()
@@ -1032,7 +1032,7 @@ def interactive():
     """
     # print_banner()/load_env() already ran in the _main callback, which fires
     # for every invocation regardless of which subcommand was requested.
-    run_wizard(_do_map, _do_batch)
+    run_wizard(_do_map, _do_batch, _do_tree)
 
 
 cache_app = typer.Typer(add_completion=False, help="Inspect or clear the response cache.")
@@ -1200,11 +1200,34 @@ def _export(mm, fmt: str, out: Path | None, level: str, elapsed: float, yes: boo
             # consuming JSON off stdout has no way to answer — fail clearly
             # instead of hanging.
             _error(f"{out} already exists.", fix="Pass --yes to overwrite, or --out a different path.")
-        from rich.prompt import Confirm
 
-        if not Confirm.ask(f"[yellow]![/] {out} already exists — overwrite?", default=False):
-            console.print("[dim]Cancelled — nothing written. Pass --out a different path, or --yes to overwrite.[/]")
-            raise typer.Exit(code=1)
+        from rich.prompt import Prompt
+
+        # A plain y/n here used to mean "no" silently discarded the map that
+        # had just been built (often after a real, non-free LLM call) with
+        # no way back short of rerunning the whole pipeline from scratch —
+        # the single output filename default (see wizard._default_output_path
+        # for the wizard's own mitigation) made this a routine, not rare,
+        # dead end. Offering a rename in place, looped until it resolves,
+        # means the file collision is the only thing that costs a retry —
+        # never the map itself.
+        while out.exists():
+            console.print(f"[yellow]![/] {out} already exists.")
+            action = Prompt.ask(
+                "  Overwrite, save under a different name, or cancel?",
+                choices=["overwrite", "rename", "cancel"],
+                default="rename",
+            )
+            if action == "overwrite":
+                break
+            if action == "cancel":
+                console.print(
+                    "[dim]Cancelled — nothing written. The map itself wasn't lost; "
+                    "rerun the export with a different --out to save it.[/]"
+                )
+                raise typer.Exit(code=1)
+            new_path = Prompt.ask("  New output path", default=str(out.with_stem(out.stem + "_2")))
+            out = Path(new_path)
     written = write_opml(mm, out) if fmt == "opml" else write_xmind(mm, out)
 
     if not json_mode():

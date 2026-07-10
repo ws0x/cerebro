@@ -19,6 +19,7 @@ dependencies = [
   "questionary>=2.0",
   "pathspec>=0.11",
   "pymupdf>=1.24",
+  "pyperclip>=1.8",
 ]
 
 [project.optional-dependencies]
