@@ -414,6 +414,24 @@ Noise is filtered automatically: `.git`, `node_modules`, `__pycache__`,
 folders are kept usable with `--max-files` (default 20 per folder, collapses
 the rest to a count) and `--max-depth` (default 8).
 
+**Reruns are incremental by default.** cerebro remembers the last map it
+built for a given folder (`~/.cerebro/tree-snapshots/`) using a signature per
+directory that depends on everything beneath it — a change three levels down
+invalidates that folder's signature and every signature back up to the root,
+so nothing is ever missed. Unchanged folders keep whatever AI label they
+already had and are never resubmitted; only what's actually new or changed
+gets relabeled. Every run reports the delta:
+
+```
+✓ Walked ./my_project: 214 nodes, depth 6
+  ↻ Reused 41/44 folder(s) since 2026-07-10T03:27:46+00:00 — 3 changed.
+✓ Labeled 3 folder(s) with groq:llama-3.3-70b-versatile
+```
+
+Pass `--fresh` to ignore any previous map and rebuild everything from
+scratch (a new snapshot is still saved afterward, so the *next* run can go
+back to being incremental).
+
 ## Caching
 
 Every expensive step — a transcription, a map/reduce/link LLM call — is

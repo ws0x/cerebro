@@ -32,7 +32,7 @@ from . import __version__
 from .batch import BatchItem, run_batch
 from .cache import Cache
 from .convert import write_opml, write_xmind
-from .foldermap import build_folder_map, label_folders
+from .foldermap import build_folder_map, finalize_tree_snapshot, label_folders
 from .ingest import load_transcript
 from .ingest.folder import discover_course_sources
 from .ingest.playlist import is_playlist_url, load_playlist
@@ -366,11 +366,18 @@ def tree(
     max_depth: int = typer.Option(8, "--max-depth", help="Maximum folder nesting depth."),
     max_files: int = typer.Option(20, "--max-files", help="Max files listed per folder before collapsing to a count."),
     no_gitignore: bool = typer.Option(False, "--no-gitignore", help="Don't respect the folder's .gitignore."),
+    fresh: bool = typer.Option(False, "--fresh", help="Ignore any previous map of this folder; rebuild everything."),
     no_cache: bool = typer.Option(False, "--no-cache", help="Disable the AI-label response cache."),
     preview: bool = typer.Option(True, "--preview/--no-preview", help="Show the map in-terminal."),
 ):
-    """Map a folder's directory structure — not a video or course folder."""
-    _do_tree(path, fmt, out, engine, max_depth, max_files, not no_gitignore, no_cache, preview)
+    """Map a folder's directory structure — not a video or course folder.
+
+    Reruns are incremental by default: unchanged subfolders (and any AI
+    label already assigned to them) are reused from the previous map of this
+    exact folder instead of being rewalked and relabeled. Use --fresh to
+    ignore that history and rebuild everything.
+    """
+    _do_tree(path, fmt, out, engine, max_depth, max_files, not no_gitignore, fresh, no_cache, preview)
 
 
 def _do_tree(
@@ -381,6 +388,7 @@ def _do_tree(
     max_depth: int,
     max_files: int,
     respect_gitignore: bool,
+    fresh: bool,
     no_cache: bool,
     preview: bool,
 ) -> None:
@@ -392,12 +400,31 @@ def _do_tree(
 
     try:
         with console.status("[cyan]Walking folder…", spinner="dots"):
-            mm = build_folder_map(path, max_depth=max_depth, max_files=max_files, respect_gitignore=respect_gitignore)
+            mm, diff, nodes_needing_labels, pending_snapshot = build_folder_map(
+                path,
+                max_depth=max_depth,
+                max_files=max_files,
+                respect_gitignore=respect_gitignore,
+                incremental=not fresh,
+            )
     except ValueError as exc:
         console.print(f"[red]✗ {exc}[/]")
         raise typer.Exit(code=1)
 
     console.print(f"[green]✓[/] Walked [bold]{path}[/]: {mm.node_count()} nodes, depth {mm.depth()}")
+    if diff is not None:
+        since = diff.previous_built_at or "an earlier run"
+        parts = []
+        if diff.added:
+            parts.append(f"{len(diff.added)} new")
+        if diff.changed:
+            parts.append(f"{len(diff.changed)} changed")
+        if diff.deleted:
+            parts.append(f"{len(diff.deleted)} deleted")
+        change_desc = ", ".join(parts) if parts else "no changes"
+        console.print(
+            f"[dim]  ↻ Reused {len(diff.reused)}/{diff.total} folder(s) since {since} — {change_desc}.[/]"
+        )
 
     try:
         provider = resolve_provider(engine)
@@ -406,28 +433,38 @@ def _do_tree(
         raise typer.Exit(code=1)
 
     if provider is not None:
-        cache = Cache(enabled=not no_cache)
-        with RichProgress(
-            SpinnerColumn(),
-            TextColumn("[cyan]{task.description}"),
-            BarColumn(),
-            TextColumn("{task.completed}/{task.total}"),
-            TimeElapsedColumn(),
-            console=console,
-            transient=True,
-        ) as progress:
-            task = progress.add_task("Labeling folders", total=1)
+        if nodes_needing_labels:
+            cache = Cache(enabled=not no_cache)
+            with RichProgress(
+                SpinnerColumn(),
+                TextColumn("[cyan]{task.description}"),
+                BarColumn(),
+                TextColumn("{task.completed}/{task.total}"),
+                TimeElapsedColumn(),
+                console=console,
+                transient=True,
+            ) as progress:
+                task = progress.add_task("Labeling folders", total=1)
 
-            def on_event(kind, **d):
-                if kind == "label_start":
-                    progress.update(task, total=d["total"], completed=0)
-                elif kind == "label_progress":
-                    progress.update(task, completed=d["done"])
+                def on_event(kind, **d):
+                    if kind == "label_start":
+                        progress.update(task, total=d["total"], completed=0)
+                    elif kind == "label_progress":
+                        progress.update(task, completed=d["done"])
 
-            label_folders(mm, provider, cache, on_event=on_event)
-        console.print(f"[green]✓[/] Labeled folders with [bold]{provider.name}:{provider.model}[/]")
+                label_folders(mm, provider, cache, nodes=nodes_needing_labels, on_event=on_event)
+            console.print(
+                f"[green]✓[/] Labeled {len(nodes_needing_labels)} folder(s) with "
+                f"[bold]{provider.name}:{provider.model}[/]"
+            )
+        else:
+            console.print("[dim]  All folders already labeled from a previous run.[/]")
     elif engine != "heuristic":
         console.print("[yellow]![/] No API key found — skipping AI folder labeling.")
+
+    # Saved only now, after any labeling above has finished mutating notes —
+    # saving earlier would silently lose every label just assigned.
+    finalize_tree_snapshot(pending_snapshot)
 
     if preview:
         console.print()
