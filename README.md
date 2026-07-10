@@ -308,6 +308,12 @@ folder (created automatically) named after the source's title — not the
 current directory, so files don't scatter across wherever you happened to run
 the command from.
 
+Mapping the exact same source at the exact same level/format again prints a
+note pointing at the previous output instead of silently rebuilding — purely
+informational, never blocking (a rerun after editing the source, or wanting
+a different engine's take, is completely normal). Tracked in
+`~/.cerebro/map-manifest.json`.
+
 ### `cerebro batch SOURCE [options]`
 
 Build **one combined** mind map from a YouTube playlist or a local course

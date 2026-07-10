@@ -57,6 +57,8 @@ from .ingest.folder import discover_course_sources
 from .ingest.playlist import is_playlist_url, load_playlist
 from .llm.base import LLMError
 from .llm.config import ConfigError, load_env, read_env_file, resolve_provider, write_env_file
+from .manifest import lookup as manifest_lookup
+from .manifest import record as manifest_record
 from .paths import CONFIG_DIR, GLOBAL_ENV_PATH, ensure_output_dir, load_config, save_config
 from .structure import HeuristicStructurer
 from .structure.document import OutlineAwareStructurer, build_outline_map, build_outline_skeleton
@@ -359,6 +361,17 @@ def _do_map(
         except ValueError:
             relationship_limit = 8
 
+    # Purely informational -- a hit here never blocks the build (the source
+    # may have changed, or the user may deliberately want a different
+    # engine's take), it just answers "didn't I already map this?" before
+    # spending the time/LLM calls to find out the hard way.
+    previous = manifest_lookup(source, level, fmt)
+    if previous and not json_mode():
+        qprint(
+            f"[dim]  ℹ You already mapped this at '{level}'/{fmt} with {previous['engine']} "
+            f"on {previous['built_at'][:10]} → {previous['output']}[/]"
+        )
+
     t0 = time.perf_counter()
     cache = Cache(enabled=not no_cache)
 
@@ -406,6 +419,7 @@ def _do_map(
 
     elapsed = time.perf_counter() - t0
     written, rel_dropped = _export(mm, fmt, out, level, elapsed, yes=yes)
+    manifest_record(source, level, fmt, engine_label, written)
     _emit_result({
         "ok": True,
         "source": source,
@@ -418,6 +432,7 @@ def _do_map(
         "relationships": len(mm.relationships),
         "relationships_dropped": rel_dropped,
         "elapsed_seconds": round(elapsed, 2),
+        "previously_mapped": previous,
     })
 
 
