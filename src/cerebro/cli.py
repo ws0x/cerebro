@@ -30,7 +30,7 @@ from rich.table import Table
 from . import __version__
 from .batch import BatchItem, run_batch
 from .cache import Cache
-from .console import console
+from .console import console, set_ascii, set_high_contrast
 from .convert import write_opml, write_xmind
 from .doctor import has_failures, run_diagnostics
 from .foldermap import build_folder_map, finalize_tree_snapshot, label_folders
@@ -121,6 +121,20 @@ def _no_color_callback(value: bool):
     return value
 
 
+def _ascii_callback(value: bool):
+    if value:
+        set_ascii(True)
+    return value
+
+
+def _theme_callback(value: str):
+    if value == "high-contrast":
+        set_high_contrast(True)
+    elif value not in ("default", None):
+        raise typer.BadParameter("must be 'default' or 'high-contrast'")
+    return value
+
+
 @app.callback(invoke_without_command=True)
 def _main(
     ctx: typer.Context,
@@ -133,6 +147,20 @@ def _main(
         callback=_no_color_callback,
         is_eager=True,
         help="Disable ANSI color. The NO_COLOR env var (https://no-color.org) works too, without this flag.",
+    ),
+    ascii_: bool = typer.Option(
+        False,
+        "--ascii",
+        callback=_ascii_callback,
+        is_eager=True,
+        help="Use plain ASCII glyphs instead of emoji/pictographic icons (some terminals and screen readers handle these poorly).",
+    ),
+    theme: str = typer.Option(
+        "default",
+        "--theme",
+        callback=_theme_callback,
+        is_eager=True,
+        help="default | high-contrast — high-contrast drops dim/low-emphasis styling in favor of your terminal's own default foreground.",
     ),
 ):
     """Cerebro root."""

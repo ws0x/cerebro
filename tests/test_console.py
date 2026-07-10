@@ -2,6 +2,8 @@ from io import StringIO
 
 from rich.console import Console
 
+from cerebro import console as console_module
+
 
 def test_ui_wizard_and_cli_share_one_console_instance():
     import cerebro.cli as cli
@@ -27,3 +29,46 @@ def test_console_respects_no_color_env_var_at_construction(monkeypatch):
     buf = StringIO()
     c = Console(file=buf, force_terminal=True)
     assert c.no_color is True
+
+
+def test_ascii_mode_toggle(monkeypatch):
+    assert console_module.ascii_mode() is False
+    console_module.set_ascii(True)
+    try:
+        assert console_module.ascii_mode() is True
+    finally:
+        console_module.set_ascii(False)
+
+
+def test_type_icon_has_an_ascii_counterpart_for_every_node_type():
+    from cerebro.ui import _TYPE_ICON, _TYPE_ICON_ASCII
+
+    assert set(_TYPE_ICON) == set(_TYPE_ICON_ASCII)
+
+
+def test_icon_switches_between_emoji_and_ascii():
+    from cerebro.ir import NodeType
+    from cerebro.ui import _icon
+
+    console_module.set_ascii(False)
+    unicode_icon = _icon(NodeType.root)
+    console_module.set_ascii(True)
+    try:
+        ascii_icon = _icon(NodeType.root)
+    finally:
+        console_module.set_ascii(False)
+    assert unicode_icon != ascii_icon
+    assert ascii_icon.isascii()
+
+
+def test_high_contrast_theme_overrides_dim_to_bold(monkeypatch):
+    buf = StringIO()
+    c = Console(file=buf, force_terminal=True)
+    monkeypatch.setattr(console_module, "console", c)
+    c.print("[dim]plain[/]")
+    console_module.set_high_contrast(True)
+    c.print("[dim]contrasted[/]")
+    out = buf.getvalue().splitlines()
+    assert "\x1b[2m" in out[0]  # SGR 2 = faint/dim
+    assert "\x1b[2m" not in out[1]
+    assert "\x1b[1m" in out[1]  # SGR 1 = bold, no dim

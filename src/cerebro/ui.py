@@ -9,7 +9,7 @@ from rich.panel import Panel
 from rich.text import Text
 from rich.tree import Tree
 
-from .console import console
+from .console import ascii_mode, console
 from .ir import MindMap, Node, NodeType
 
 _BANNER_ART = (
@@ -21,7 +21,10 @@ _BANNER_ART = (
 )
 
 
-# Icon per semantic node type, for the terminal preview.
+# Icon per semantic node type, for the terminal preview. Pictographic emoji
+# don't render everywhere (some Windows consoles, screen readers that spell
+# out "brain emoji" on every single node) — _TYPE_ICON_ASCII is the fallback
+# when ascii_mode() is on, selected via the --ascii flag.
 _TYPE_ICON = {
     NodeType.root: "🧠",
     NodeType.topic: "◆",
@@ -34,6 +37,23 @@ _TYPE_ICON = {
     NodeType.question: "❓",
     NodeType.detail: "•",
 }
+_TYPE_ICON_ASCII = {
+    NodeType.root: "*",
+    NodeType.topic: "#",
+    NodeType.concept: "o",
+    NodeType.definition: "[D]",
+    NodeType.example: "[EX]",
+    NodeType.insight: "[!]",
+    NodeType.action: "[OK]",
+    NodeType.warning: "[WARN]",
+    NodeType.question: "[?]",
+    NodeType.detail: "-",
+}
+
+
+def _icon(node_type: NodeType) -> str:
+    icons = _TYPE_ICON_ASCII if ascii_mode() else _TYPE_ICON
+    return icons.get(node_type, "-" if ascii_mode() else "•")
 
 
 # Width the big wordmark actually needs (art width + panel borders/padding).
@@ -73,7 +93,7 @@ def _compact_banner() -> Panel:
     from rich.align import Align
 
     text = Text()
-    text.append("🧠 cerebro", style="bold bright_magenta")
+    text.append(f"{_icon(NodeType.root)} cerebro", style="bold bright_magenta")
     text.append("\nvideo → smart mind maps", style="dim white")
     return Panel(
         Align.center(text),
@@ -92,8 +112,7 @@ _NOTE_PREVIEW_LEN = 50
 
 def _attach(tree: Tree, node: Node, max_depth: int | None, depth: int = 1) -> None:
     for child in node.children:
-        icon = _TYPE_ICON.get(child.type, "•")
-        label = Text(f"{icon} {child.title}")
+        label = Text(f"{_icon(child.type)} {child.title}")
         if child.type == NodeType.detail:
             label.stylize("dim")
         if child.note:
@@ -115,7 +134,7 @@ def map_preview(mm: MindMap, max_depth: int | None = None) -> Tree:
     ``max_depth`` caps how many levels are expanded — used for batch/playlist
     maps where a full render would flood the terminal.
     """
-    root_label = Text(f"🧠 {mm.root.title}", style="bold cyan")
+    root_label = Text(f"{_icon(NodeType.root)} {mm.root.title}", style="bold cyan")
     tree = Tree(root_label)
     _attach(tree, mm.root, max_depth)
     return tree

@@ -243,6 +243,18 @@ Every option below applies to both.
 
 ## Command reference
 
+### Global flags
+
+These come before the subcommand (`cerebro --no-color doctor`, not
+`cerebro doctor --no-color`) and apply everywhere:
+
+| Flag | Meaning |
+|---|---|
+| `--no-color` | Disable ANSI color. The [`NO_COLOR`](https://no-color.org) env var works too, without the flag. |
+| `--ascii` | Plain ASCII glyphs instead of emoji/pictographic icons — for terminals and screen readers that handle them poorly. |
+| `--theme` | `default` \| `high-contrast` — high-contrast drops dim/low-emphasis styling in favor of your terminal's own default foreground. |
+| `--version` | Show version and exit. |
+
 ### `cerebro map SOURCE [options]`
 
 Build a mind map from a single source.
