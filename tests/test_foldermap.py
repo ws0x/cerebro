@@ -2,7 +2,13 @@ import json
 import time
 
 from cerebro.cache import Cache
-from cerebro.foldermap import build_folder_map, finalize_tree_snapshot, forget_tree_snapshot, label_folders
+from cerebro.foldermap import (
+    build_folder_map,
+    finalize_tree_snapshot,
+    forget_tree_snapshot,
+    label_folders,
+    list_tree_snapshots,
+)
 from cerebro.ir import NodeType
 from cerebro.llm.providers import MockProvider
 
@@ -366,3 +372,23 @@ def test_forgotten_folder_rebuilds_from_scratch_next_run(tmp_path, tmp_path_fact
 
     _mm, diff, _nodes = _map_reusing_snapshot(project, snap_dir)
     assert diff is None  # no history to diff against, same as a true first run
+
+
+# --- status / list_tree_snapshots -------------------------------------------
+
+
+def test_list_tree_snapshots_empty_dir_returns_empty_list(tmp_path_factory):
+    snap_dir = tmp_path_factory.mktemp("snap")
+    assert list_tree_snapshots(snapshot_dir=snap_dir) == []
+
+
+def test_list_tree_snapshots_reports_source_and_counts(tmp_path, tmp_path_factory):
+    project = _make_project(tmp_path)
+    snap_dir = tmp_path_factory.mktemp("snap")
+    _map_reusing_snapshot(project, snap_dir)
+
+    snaps = list_tree_snapshots(snapshot_dir=snap_dir)
+    assert len(snaps) == 1
+    assert snaps[0]["source"] == str(project.resolve())
+    assert snaps[0]["folders"] > 0
+    assert snaps[0]["built_at"] != "?"

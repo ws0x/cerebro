@@ -159,6 +159,26 @@ def _snapshot_path(root: Path, snapshot_dir: Path) -> Path:
     return snapshot_dir / f"{key}.json"
 
 
+def list_tree_snapshots(snapshot_dir: str | Path | None = None) -> list[dict]:
+    """Every saved tree snapshot's summary — for `cerebro status`."""
+    snapshot_dir = Path(snapshot_dir) if snapshot_dir is not None else TREE_SNAPSHOT_DIR
+    if not snapshot_dir.exists():
+        return []
+    out = []
+    for path in sorted(snapshot_dir.glob("*.json")):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        out.append({
+            "source": data.get("source", "(unknown — mapped before this field existed; rerun to update)"),
+            "built_at": data.get("built_at", "?"),
+            "folders": len(data.get("signatures", {})),
+            "labels": len(data.get("labels", {})),
+        })
+    return out
+
+
 def forget_tree_snapshot(root: str | Path, snapshot_dir: str | Path | None = None) -> bool:
     """Delete the incremental snapshot for ``root``, if one exists.
 
@@ -202,6 +222,7 @@ def _save_snapshot(
         "built_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "signatures": signatures,
         "labels": labels,
+        "source": str(root),  # for `cerebro status` to list *what* is remembered, not just a hash
     }
     _snapshot_path(root, snapshot_dir).write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
 

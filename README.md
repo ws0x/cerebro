@@ -493,6 +493,18 @@ or a second engine's key is reported as an advisory (`!`), not a failure;
 `cerebro doctor` only exits non-zero on a hard failure (an unsupported
 Python version, a missing core dependency, an unwritable storage path).
 
+## Checking what cerebro remembers (`cerebro status`)
+
+```bash
+cerebro status
+```
+
+One place to see everything: response cache size, and every folder/playlist
+with saved incremental history, each with its source path/URL and when it
+was last built — the list you need before reaching for `cerebro forget`.
+Complements `cerebro doctor`, which checks whether your setup will *work*
+rather than what it's already *done*.
+
 ## Forgetting incremental history (`cerebro forget`)
 
 ```bash

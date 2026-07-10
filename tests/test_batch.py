@@ -1,4 +1,4 @@
-from cerebro.batch import BatchItem, forget_batch_snapshot, run_batch
+from cerebro.batch import BatchItem, forget_batch_snapshot, list_batch_snapshots, run_batch
 from cerebro.ir import NodeType
 from cerebro.structure import HeuristicStructurer
 
@@ -193,3 +193,24 @@ def test_forgotten_batch_reprocesses_everything_next_run(tmp_path, tmp_path_fact
         batch_source="course://demo", snapshot_dir=snap_dir,
     )
     assert diff is None  # no history to diff against, same as a true first run
+
+
+# --- status / list_batch_snapshots ------------------------------------------
+
+
+def test_list_batch_snapshots_empty_dir_returns_empty_list(tmp_path_factory):
+    snap_dir = tmp_path_factory.mktemp("snap")
+    assert list_batch_snapshots(snapshot_dir=snap_dir) == []
+
+
+def test_list_batch_snapshots_reports_source_and_item_count(tmp_path, tmp_path_factory):
+    items = _lesson_files(tmp_path, [("A", "Topic A content here."), ("B", "Topic B content here.")])
+    snap_dir = tmp_path_factory.mktemp("snap")
+    run_batch(items, lambda: HeuristicStructurer(), level="full", title="Course",
+              batch_source="course://demo", snapshot_dir=snap_dir)
+
+    snaps = list_batch_snapshots(snapshot_dir=snap_dir)
+    assert len(snaps) == 1
+    assert snaps[0]["source"] == "course://demo"
+    assert snaps[0]["items"] == 2
+    assert snaps[0]["built_at"] != "?"

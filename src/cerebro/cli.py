@@ -28,12 +28,18 @@ from rich.progress import Progress as RichProgress
 from rich.table import Table
 
 from . import __version__
-from .batch import BatchItem, forget_batch_snapshot, run_batch
+from .batch import BatchItem, forget_batch_snapshot, list_batch_snapshots, run_batch
 from .cache import Cache
 from .console import console, set_ascii, set_high_contrast
 from .convert import write_opml, write_xmind
 from .doctor import has_failures, run_diagnostics
-from .foldermap import build_folder_map, finalize_tree_snapshot, forget_tree_snapshot, label_folders
+from .foldermap import (
+    build_folder_map,
+    finalize_tree_snapshot,
+    forget_tree_snapshot,
+    label_folders,
+    list_tree_snapshots,
+)
 from .ingest import load_transcript
 from .ingest.folder import discover_course_sources
 from .ingest.playlist import is_playlist_url, load_playlist
@@ -607,6 +613,49 @@ def doctor(
 
     if has_failures(checks):
         raise typer.Exit(code=1)
+
+
+@app.command()
+def status():
+    """Show what cerebro remembers: the response cache, plus every folder/playlist with saved incremental history.
+
+    Complements `cerebro doctor` (which checks whether your setup will
+    *work*) by answering a different question: what has cerebro already
+    *done*, and for what — the thing you need to know before reaching for
+    `cerebro forget`.
+    """
+    cache = Cache()
+    count, total_bytes = cache.stats()
+    tree_snaps = list_tree_snapshots()
+    batch_snaps = list_batch_snapshots()
+
+    summary = Table.grid(padding=(0, 2))
+    summary.add_row("[dim]Response cache[/]", f"{count} entries, {_human_size(total_bytes)}")
+    summary.add_row("[dim]Tree snapshots[/]", f"{len(tree_snaps)} folder(s) with saved history")
+    summary.add_row("[dim]Batch snapshots[/]", f"{len(batch_snaps)} playlist/course(s) with saved history")
+    console.print(Panel(summary, title="[cyan]cerebro status[/]", border_style="cyan", expand=False))
+
+    if tree_snaps:
+        table = Table(title="Folders with saved map history (cerebro tree)", box=None)
+        table.add_column("Source", style="bold")
+        table.add_column("Built")
+        table.add_column("Folders")
+        table.add_column("Labeled")
+        for snap in tree_snaps:
+            table.add_row(snap["source"], snap["built_at"], str(snap["folders"]), str(snap["labels"]))
+        console.print(table)
+
+    if batch_snaps:
+        table = Table(title="Playlists/courses with saved batch history (cerebro batch)", box=None)
+        table.add_column("Source", style="bold")
+        table.add_column("Built")
+        table.add_column("Items")
+        for snap in batch_snaps:
+            table.add_row(snap["source"], snap["built_at"], str(snap["items"]))
+        console.print(table)
+
+    if not tree_snaps and not batch_snaps:
+        console.print("[dim]No incremental history yet — run `cerebro tree` or `cerebro batch` to build some.[/]")
 
 
 @app.command()

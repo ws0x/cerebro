@@ -109,10 +109,30 @@ def _save_batch_snapshot(batch_source: str, params: dict, items_data: dict, snap
         "params": params,
         "built_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "items": items_data,
+        "source": batch_source,  # for `cerebro status` to list *what* is remembered, not just a hash
     }
     _batch_snapshot_path(batch_source, snapshot_dir).write_text(
         json.dumps(data, ensure_ascii=False), encoding="utf-8"
     )
+
+
+def list_batch_snapshots(snapshot_dir: str | Path | None = None) -> list[dict]:
+    """Every saved batch snapshot's summary — for `cerebro status`."""
+    snapshot_dir = Path(snapshot_dir) if snapshot_dir is not None else BATCH_SNAPSHOT_DIR
+    if not snapshot_dir.exists():
+        return []
+    out = []
+    for path in sorted(snapshot_dir.glob("*.json")):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        out.append({
+            "source": data.get("source", "(unknown — run before this field existed; rerun to update)"),
+            "built_at": data.get("built_at", "?"),
+            "items": len(data.get("items", {})),
+        })
+    return out
 
 
 def run_batch(
