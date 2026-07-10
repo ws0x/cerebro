@@ -29,13 +29,15 @@ def load_transcript(
 ) -> Transcript:
     """Load a transcript from a URL or local file path.
 
-    ``cache`` is only used by the local-video path (Whisper transcription is
-    the one expensive step in ingest); other sources ignore it.
+    ``cache`` is used by both the YouTube path (captions rarely change once
+    published, so refetching them every run is wasted work) and the
+    local-video path (Whisper transcription is the expensive step there).
+    Subtitle-file sources ignore it — reading a local file is already free.
     """
     if looks_like_youtube(source):
         from .youtube import load_youtube
 
-        return load_youtube(source)
+        return load_youtube(source, cache=cache)
 
     path = Path(source)
     if path.exists():

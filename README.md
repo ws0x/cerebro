@@ -434,11 +434,13 @@ back to being incremental).
 
 ## Caching
 
-Every expensive step — a transcription, a map/reduce/link LLM call — is
-cached by a content hash of its inputs (provider, model, prompt version,
-level, text). Practical effect: re-running the same video, or upgrading
-`brief` → `full` → `expert`, reuses everything it can and only pays for what
-actually changed. Pass `--no-cache` to force a clean run.
+Every expensive step — YouTube caption fetches, Whisper transcription, a
+map/reduce/link LLM call — is cached. Practical effect: re-running the same
+video, or upgrading `brief` → `full` → `expert`, reuses everything it can and
+only pays for what actually changed. Pass `--no-cache` to force a clean run.
+YouTube captions specifically are cached by video ID + language, since a
+published video's captions essentially never change — no reason to hit
+YouTube again for a video cerebro has already fetched.
 
 The cache lives at `~/.cerebro/cache` — a stable location so it's actually
 shared across runs regardless of which directory you're in when you invoke
