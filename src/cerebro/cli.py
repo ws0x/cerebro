@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import sys
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 
@@ -71,11 +72,28 @@ def _safe_filename(title: str) -> str:
     return (name or "mindmap")[:80]
 
 
+@contextmanager
+def _spinner(description: str):
+    """Spinner + description + elapsed time — used instead of bare
+    console.status() everywhere, so every long-running step (loading a
+    transcript, possibly via a multi-minute Whisper transcription; reading a
+    huge playlist; walking a folder) shows elapsed time, not just the ones
+    that happen to have a countable N and already got a full progress bar.
+    No bar/count columns since these steps have no countable sub-progress —
+    that's what RichProgress is still used directly for elsewhere."""
+    with RichProgress(
+        SpinnerColumn(), TextColumn("[cyan]{task.description}"), TimeElapsedColumn(),
+        console=console, transient=True,
+    ) as progress:
+        progress.add_task(description, total=None)
+        yield
+
+
 def _structure(transcript, level, provider, cache, relationship_limit=8):
     """Build the map with the resolved engine, showing live progress and
     falling back to the offline heuristic if an LLM call fails."""
     if provider is None:
-        with console.status(f"[cyan]Structuring ({level})…", spinner="dots"):
+        with _spinner(f"Structuring ({level})…"):
             return HeuristicStructurer().structure(transcript, level=level)
 
     with RichProgress(
@@ -241,7 +259,7 @@ def _do_map(
     cache = Cache(enabled=not no_cache)
 
     try:
-        with console.status("[cyan]Loading transcript…", spinner="dots"):
+        with _spinner("Loading transcript…"):
             transcript = load_transcript(source, whisper_model=whisper_model, cache=cache)
     except Exception as exc:
         console.print(f"[red]✗ Failed to load transcript: {exc}[/]")
@@ -344,7 +362,7 @@ def _do_batch(
 
     transcribe_count = 0
     if is_playlist_url(source):
-        with console.status("[cyan]Reading playlist…", spinner="dots"):
+        with _spinner("Reading playlist…"):
             info = load_playlist(source)
         items = [BatchItem(label=t, source=u) for t, u in info.items]
         title = info.title
@@ -437,7 +455,7 @@ def _do_batch(
     # expert-level structuring above; this second pass looks across all of
     # them together, so a concept in lesson 2 can connect to one in lesson 7.
     if level == "expert" and provider is not None and combined.node_count() > 3:
-        with console.status("[cyan]Finding connections across videos…", spinner="dots"):
+        with _spinner("Finding connections across videos…"):
             link_relationships(
                 combined, provider, cache, cross_video=True, relationship_limit=relationship_limit
             )
@@ -520,7 +538,7 @@ def _do_tree(
     t0 = time.perf_counter()
 
     try:
-        with console.status("[cyan]Walking folder…", spinner="dots"):
+        with _spinner("Walking folder…"):
             mm, diff, nodes_needing_labels, pending_snapshot = build_folder_map(
                 path,
                 max_depth=max_depth,
@@ -668,7 +686,7 @@ def doctor(
     a missing optional piece like Whisper or a second engine's key is
     reported as an advisory, not an error.
     """
-    with console.status("[cyan]Running diagnostics…", spinner="dots"):
+    with _spinner("Running diagnostics…"):
         checks = run_diagnostics(check_network=network)
 
     table = Table(box=None, padding=(0, 1, 0, 0), show_header=False)
