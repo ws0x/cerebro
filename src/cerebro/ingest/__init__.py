@@ -18,6 +18,7 @@ if TYPE_CHECKING:
 _YOUTUBE_RE = re.compile(r"(youtube\.com|youtu\.be)", re.IGNORECASE)
 _SUBTITLE_EXTS = {".vtt", ".srt", ".txt"}
 _VIDEO_EXTS = {".mp4", ".mkv", ".mov", ".webm", ".avi", ".m4v"}
+_PDF_EXTS = {".pdf"}
 
 
 def looks_like_youtube(source: str) -> bool:
@@ -50,6 +51,10 @@ def load_transcript(
             from .video import load_video
 
             return load_video(path, whisper_model=whisper_model, cache=cache)
+        if ext in _PDF_EXTS:
+            from .pdf import load_pdf
+
+            return load_pdf(path, cache=cache)
         raise ValueError(f"Unsupported file type: {ext} ({path})")
 
     raise ValueError(

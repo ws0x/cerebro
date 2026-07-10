@@ -21,11 +21,25 @@ class Segment:
 
 
 @dataclass
+class OutlineEntry:
+    """One heading in a source document's real, pre-existing structure (e.g. a
+    PDF's bookmarks/TOC, or detected headings). ``page`` is 0-indexed."""
+
+    level: int
+    title: str
+    page: int
+
+
+@dataclass
 class Transcript:
     source: str
     title: str
     segments: list[Segment] = field(default_factory=list)
     language: str = "en"
+    # Non-empty only for sources with real, pre-existing structure (PDFs with a
+    # TOC/detected headings). When present, the structurer builds the map from
+    # this skeleton directly instead of inventing hierarchy from flat text.
+    outline: list[OutlineEntry] = field(default_factory=list)
 
     @property
     def full_text(self) -> str:
