@@ -44,6 +44,10 @@ def test_kind_for_tree_is_always_tree():
     assert _kind_for("tree", "some/folder") == "tree"
 
 
+def test_kind_for_article_is_always_article():
+    assert _kind_for("article", "https://example.com/some-post") == "article"
+
+
 def test_clean_strips_bom_and_zero_width_chars():
     assert _clean("﻿https://youtu.be/abc") == "https://youtu.be/abc"
     assert _clean("  path/to​/file.vtt  ") == "path/to/file.vtt"

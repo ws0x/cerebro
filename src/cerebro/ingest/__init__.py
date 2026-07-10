@@ -26,6 +26,10 @@ def looks_like_youtube(source: str) -> bool:
     return bool(_YOUTUBE_RE.search(source))
 
 
+def looks_like_web_url(source: str) -> bool:
+    return source.startswith(("http://", "https://"))
+
+
 def load_transcript(
     source: str, whisper_model: str = "base", cache: "Cache | None" = None
 ) -> Transcript:
@@ -40,6 +44,11 @@ def load_transcript(
         from .youtube import load_youtube
 
         return load_youtube(source, cache=cache)
+
+    if looks_like_web_url(source):
+        from .article import load_article
+
+        return load_article(source)
 
     path = Path(source)
     if path.exists():

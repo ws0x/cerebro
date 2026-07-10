@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .ingest import looks_like_youtube
+from .ingest import looks_like_web_url, looks_like_youtube
 from .ingest.playlist import is_playlist_url
 
 # A real URL or path is always a single short token -- this rules out
@@ -54,8 +54,9 @@ def suggest_for_mode(mode: str) -> str | None:
     prompted for next -- or None if the clipboard holds nothing usable.
 
     ``mode`` is one of the wizard's source kinds: "youtube", "local_video",
-    "pdf", "tree". Deliberately conservative -- a false suggestion is worse
-    than no suggestion, since it's the very first thing the user sees.
+    "pdf", "article", "tree". Deliberately conservative -- a false
+    suggestion is worse than no suggestion, since it's the very first thing
+    the user sees.
     """
     text = read_clipboard_text()
     if text is None:
@@ -63,6 +64,11 @@ def suggest_for_mode(mode: str) -> str | None:
 
     if mode == "youtube":
         return text if (looks_like_youtube(text) or is_playlist_url(text)) else None
+
+    if mode == "article":
+        # A YouTube URL is also a web URL -- but that's the youtube mode's
+        # signal to claim, not article's, so explicitly exclude it here.
+        return text if (looks_like_web_url(text) and not looks_like_youtube(text)) else None
 
     if mode == "pdf":
         path = _existing_path(text)

@@ -20,6 +20,7 @@ dependencies = [
   "pathspec>=0.11",
   "pymupdf>=1.24",
   "pyperclip>=1.8",
+  "trafilatura>=1.8",
 ]
 
 [project.optional-dependencies]

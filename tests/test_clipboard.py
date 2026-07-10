@@ -83,3 +83,20 @@ def test_suggest_for_mode_never_raises_on_weird_path_chars():
         assert suggest_for_mode("pdf") is None
         assert suggest_for_mode("tree") is None
         assert suggest_for_mode("local_video") is None
+
+
+def test_suggest_for_mode_article_matches_a_web_url():
+    with patch("pyperclip.paste", return_value="https://example.com/some-article"):
+        assert suggest_for_mode("article") == "https://example.com/some-article"
+
+
+def test_suggest_for_mode_article_rejects_a_non_url():
+    with patch("pyperclip.paste", return_value="not a url at all"):
+        assert suggest_for_mode("article") is None
+
+
+def test_suggest_for_mode_article_excludes_youtube_urls():
+    # A YouTube URL is technically also a web URL, but that's youtube mode's
+    # signal to claim -- article mode must not also offer it.
+    with patch("pyperclip.paste", return_value="https://youtube.com/watch?v=abc123"):
+        assert suggest_for_mode("article") is None

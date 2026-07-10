@@ -183,6 +183,7 @@ def run_diagnostics(
         ("pydantic", "pydantic"),
         ("fitz", "pymupdf"),
         ("pyperclip", "pyperclip"),
+        ("trafilatura", "trafilatura"),
     ):
         ok = _importable(mod)
         checks.append(Check(

@@ -2,11 +2,11 @@
 
 # cerebro
 
-**Turn video, audio, and PDFs into structured knowledge — not just a summary.**
+**Turn video, audio, PDFs, and web articles into structured knowledge — not just a summary.**
 
 Point it at a YouTube video, a whole playlist, a course folder, a local video
-or audio file, or a PDF. Get back a hierarchical mind map — OPML, native
-XMind, or Markdown — with real structure: topics, sub-points,
+or audio file, a PDF, or a web article URL. Get back a hierarchical mind map
+— OPML, native XMind, or Markdown — with real structure: topics, sub-points,
 cross-references, and icons — built by an LLM that *understands* the
 content, not a transcript-slicer that pretends to.
 
@@ -44,6 +44,7 @@ content, not a transcript-slicer that pretends to.
 - [Batch: playlists & course folders](#batch-playlists--course-folders)
 - [Local video & audio: embedded subtitles & Whisper](#local-video--audio-embedded-subtitles--whisper)
 - [PDF files](#pdf-files)
+- [Web articles](#web-articles)
 - [Folder structure maps (`cerebro tree`)](#folder-structure-maps-cerebro-tree)
 - [Caching](#caching)
 - [Examples](#examples)
@@ -70,7 +71,7 @@ A few things that make it worth trying:
 - **Actually smart, not just extractive.** Real map → reduce → link pipeline, with an explicit anti-hallucination grounding rule so it doesn't invent facts your source never said.
 - **Free by default.** Works with free-tier [Groq](https://console.groq.com/keys) or [Gemini](https://aistudio.google.com/apikey) keys — no paid API required.
 - **Works fully offline too.** No key at all → falls back to a deterministic heuristic engine. No internet for the *video* → local files, embedded subtitles, and Whisper transcription all work with zero network calls.
-- **Every real source.** Single YouTube videos, whole playlists, local course folders, local video/audio files (with or without subtitles), and PDF files.
+- **Every real source.** Single YouTube videos, whole playlists, local course folders, local video/audio files (with or without subtitles), PDF files, and web articles.
 - **Three honest output formats.** Universal OPML (imports everywhere), native `.xmind` (keeps relationship arrows and icons OPML physically can't represent), or Markdown (for Obsidian/Notion/plain outliners — the one XMind never reaches).
 - **Batch-safe.** A 40-video playlist doesn't die because one video is private — failures are reported per-item, never fatal.
 - **Fast.** Concurrent ingestion, concurrent LLM calls, and a content-addressed cache mean re-runs and level upgrades (brief → full → expert) cost almost nothing.
@@ -290,9 +291,9 @@ These come before the subcommand (`cerebro --no-color doctor`, not
 
 Build a mind map from a single source.
 
-`SOURCE` — a YouTube URL, or a local `.srt` / `.vtt` / `.txt` / `.mp4` /
-`.mkv` / `.mov` / `.webm` / `.avi` / `.m4v` / `.mp3` / `.wav` / `.m4a` /
-`.flac` / `.ogg` / `.aac` / `.pdf` file.
+`SOURCE` — a YouTube URL, a web article URL, or a local `.srt` / `.vtt` /
+`.txt` / `.mp4` / `.mkv` / `.mov` / `.webm` / `.avi` / `.m4v` / `.mp3` /
+`.wav` / `.m4a` / `.flac` / `.ogg` / `.aac` / `.pdf` file.
 
 | Flag | Default | Meaning |
 |---|---|---|
@@ -560,6 +561,29 @@ standalone `cerebro map`.
 
 **Not supported:** scanned/image-only PDFs (no text layer — would need OCR),
 tables and images within a PDF (text only), and password-protected PDFs.
+
+## Web articles
+
+```bash
+cerebro map "https://example.com/some-blog-post"
+cerebro map "https://docs.example.com/guide" --level expert --format md
+```
+
+Content extraction (stripping nav bars, ads, comments, and footers down to
+the actual article body) is handled by [trafilatura](https://github.com/adbar/trafilatura)
+— boilerplate removal is a genuinely fiddly problem this doesn't reinvent.
+
+Same judgment call as PDFs: an article's own `<h2>`/`<h3>` heading structure
+(if it has any) becomes the map's real hierarchy directly, instead of an LLM
+inventing one from flat text. A single flowing article with no internal
+headings falls through to the same map → reduce → link pipeline used for a
+video transcript, unchanged. A lone `<h1>` that just restates the page title
+doesn't count as internal structure on its own — you need real sub-sections
+for cerebro to treat the page as having a hierarchy worth preserving.
+
+**Not supported:** paywalled articles, and pages that render their content
+entirely client-side via JavaScript with nothing in the server-rendered HTML
+to extract.
 
 ## Folder structure maps (`cerebro tree`)
 

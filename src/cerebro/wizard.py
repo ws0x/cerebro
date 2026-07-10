@@ -39,7 +39,7 @@ from rich.table import Table
 
 from .clipboard import suggest_for_mode
 from .console import console, has_real_console
-from .ingest import looks_like_youtube
+from .ingest import looks_like_web_url, looks_like_youtube
 from .ingest.playlist import is_playlist_url
 from .paths import ensure_output_dir, load_config, save_config
 
@@ -181,6 +181,7 @@ _MODE_CHOICES = [
     Choice("YouTube video or playlist", value="youtube"),
     Choice("Local video or audio — single file or a folder of lessons", value="local_video"),
     Choice("PDF file", value="pdf"),
+    Choice("Web article — a blog post or documentation page URL", value="article"),
     Choice("Folder structure — map how it's organized, not its contents (cerebro tree)", value="tree"),
 ]
 
@@ -188,6 +189,7 @@ _MODE_LABEL = {
     "youtube": "YouTube video or playlist",
     "local_video": "local video/audio",
     "pdf": "PDF file",
+    "article": "web article",
     "tree": "folder structure",
 }
 
@@ -196,6 +198,7 @@ _KIND_LABEL = {
     "youtube": "YouTube video",
     "folder": "local course folder (batch)",
     "file": "local file",
+    "article": "web article",
     "tree": "folder structure map",
 }
 
@@ -239,6 +242,8 @@ def _kind_for(mode: str, source: str) -> str:
         return "tree"
     if mode == "pdf":
         return "file"
+    if mode == "article":
+        return "article"
     return "folder" if Path(source).is_dir() else "file"  # local_video
 
 
@@ -255,6 +260,16 @@ def _ask_source_for_mode(mode: str, default: str = "") -> str:
                 return _BACK
             if not (looks_like_youtube(result) or is_playlist_url(result)):
                 console.print(f"[red]✗ Doesn't look like a YouTube URL: {result}[/]\n")
+                default = result
+                continue
+            return result
+
+        if mode == "article":
+            result = _ask_text("Paste a web article/blog post/documentation page URL:", default=default, allow_back=True)
+            if result is _BACK:
+                return _BACK
+            if not looks_like_web_url(result):
+                console.print(f"[red]✗ Doesn't look like a URL (needs http:// or https://): {result}[/]\n")
                 default = result
                 continue
             return result
@@ -344,8 +359,8 @@ def _default_output_path(source: str, kind: str, fmt: str) -> Path:
     """A same-named default beats a fixed "mindmap.<fmt>" every source
     always collides with — the exact trap that turns _export's overwrite
     prompt into a routine annoyance instead of the rare edge case it should
-    be. YouTube sources keep the generic name: the real title isn't known
-    until after the transcript is fetched, well past this prompt, and
+    be. YouTube and web article sources keep the generic name: the real
+    title isn't known until after fetching, well past this prompt, and
     fetching early just to name a file isn't worth the extra latency."""
     stem = "mindmap"
     try:
