@@ -391,6 +391,29 @@ lose there).
 | `--format`, `-f` | `xmind` if any input has relationships, else `opml` | `opml` \| `xmind` |
 | `--out`, `-o` / `--preview` / `--yes` | *(same as `map`)* | |
 
+### `cerebro edit FILE [options]`
+
+Rename or delete a node in an **already-built** map, then save it back — a
+lightweight touch-up tool for the common case where the model got one
+node's title slightly wrong, or invented something you don't want. Beats
+hand-editing the raw OPML/XMind file yourself.
+
+```bash
+cerebro edit my_map.opml
+cerebro edit my_map.xmind --out my_map_edited.xmind
+```
+
+An arrow-key menu lists every node (indented to show the hierarchy); pick
+one to rename or delete (deleting a node takes everything under it too —
+you're asked to confirm first), or pick **Done, save** to write your
+changes back to `FILE` (or `--out`, if given). Needs a real interactive
+terminal — a live tree browser has no sensible piped/scripted equivalent,
+unlike every other command here.
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--out`, `-o` | overwrite `FILE` | Where to save your changes |
+
 ### `cerebro cache stats` / `cerebro cache clear`
 
 Inspect or wipe the response cache — see [Caching](#caching).

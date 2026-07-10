@@ -23,7 +23,9 @@ def _force_utf8() -> None:
 
 _force_utf8()
 
+import questionary
 import typer
+from questionary import Choice
 from rich.panel import Panel
 from rich.progress import BarColumn, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.progress import Progress as RichProgress
@@ -45,6 +47,7 @@ from .console import (
 )
 from .convert import write_markdown, write_opml, write_xmind
 from .doctor import has_failures, run_diagnostics
+from .editor import delete, flatten, node_at, rename
 from .foldermap import (
     build_folder_map,
     finalize_tree_snapshot,
@@ -59,14 +62,14 @@ from .llm.base import LLMError
 from .llm.config import ConfigError, load_env, read_env_file, resolve_provider, write_env_file
 from .manifest import lookup as manifest_lookup
 from .manifest import record as manifest_record
-from .merge import MergeError, merge_maps
+from .merge import MergeError, merge_maps, read_map
 from .paths import CONFIG_DIR, GLOBAL_ENV_PATH, ensure_output_dir, load_config, save_config
 from .search import search_maps
 from .structure import HeuristicStructurer
 from .structure.document import OutlineAwareStructurer, build_outline_map, build_outline_skeleton
 from .structure.llm import LLMStructurer, link_relationships
 from .ui import banner, print_banner, print_preview
-from .wizard import run_wizard
+from .wizard import QSTYLE, run_wizard
 
 _EPILOG = (
     'Examples: cerebro (wizard)  |  cerebro map "URL" -l expert  |  '
@@ -1075,6 +1078,84 @@ def merge(
         "relationships_dropped": rel_dropped,
         "elapsed_seconds": round(elapsed, 2),
     })
+
+
+_DONE_EDITING = "__done__"
+
+
+@app.command()
+def edit(
+    file: Path = typer.Argument(..., help="An already-built .opml/.xmind file to touch up."),
+    out: Path = typer.Option(None, "--out", "-o", help="Where to save (default: overwrite FILE)."),
+):
+    """Rename or delete a node in an already-built map, then save it back.
+
+    A lightweight touch-up tool for the common case: the model got one
+    node's title slightly wrong, or invented something you don't want --
+    fixing it here beats hand-editing the raw OPML/XMind file by hand.
+    Needs a real interactive terminal (a live tree browser has no sensible
+    piped/scripted equivalent, unlike every other command here).
+    """
+    if not file.exists():
+        _error(f"File not found: {file}")
+    if not has_real_console():
+        _error("cerebro edit needs an interactive terminal.", fix="Run it directly, not piped or scripted.")
+
+    try:
+        mm = read_map(file)
+    except MergeError as exc:
+        _error(str(exc))
+
+    changed = False
+    while True:
+        entries = flatten(mm.root)
+        choices = [Choice(f"{'  ' * e.depth}{e.node.title}", value=e.path) for e in entries]
+        choices.append(Choice("── Done, save ──", value=_DONE_EDITING))
+        selection = questionary.select(
+            "Pick a node to edit (or Done to save):", choices=choices, style=QSTYLE
+        ).ask()
+        if selection is None or selection == _DONE_EDITING:
+            break
+
+        node = node_at(mm.root, selection)
+        action = questionary.select(
+            f'Editing "{node.title}":',
+            choices=[
+                Choice("Rename", value="rename"),
+                Choice("Delete" + (" (and everything under it)" if node.children else ""), value="delete"),
+                Choice("← Back", value="back"),
+            ],
+            style=QSTYLE,
+        ).ask()
+
+        if action == "rename":
+            new_title = questionary.text("New title:", default=node.title, style=QSTYLE).ask()
+            if new_title and new_title.strip() and new_title.strip() != node.title:
+                rename(mm.root, selection, new_title.strip())
+                changed = True
+        elif action == "delete":
+            if not selection:
+                console.print("[red]✗ Can't delete the root node.[/]")
+                continue
+            confirmed = questionary.confirm(
+                f'Delete "{node.title}"' + (" and everything under it?" if node.children else "?"),
+                default=False,
+                style=QSTYLE,
+            ).ask()
+            if confirmed:
+                delete(mm.root, selection)
+                changed = True
+
+    if not changed:
+        console.print("[dim]No changes made.[/]")
+        raise typer.Exit()
+
+    dest = out or file
+    suffix = dest.suffix.lower()
+    if suffix not in (".opml", ".xmind"):
+        _error(f"Unsupported output extension for edit: {suffix or '(none)'}", fix="Use a .opml or .xmind output path.")
+    written = write_opml(mm, dest) if suffix == ".opml" else write_xmind(mm, dest)
+    console.print(f"[green]✓[/] Saved {mm.node_count()} node(s) to [bold]{written}[/]")
 
 
 def _dashboard_layout():

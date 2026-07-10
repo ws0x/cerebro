@@ -45,7 +45,7 @@ from .paths import ensure_output_dir, load_config, save_config
 
 # Matches Rich's cyan accent used everywhere else in the CLI, so the arrow-key
 # menus don't feel like a different tool bolted on.
-_QSTYLE = Style(
+QSTYLE = Style(
     [
         ("qmark", "fg:#29b6c9 bold"),
         ("question", "bold"),
@@ -95,7 +95,7 @@ def _ask_text(message: str, default: str | None = None, allow_back: bool = False
     if has_real_console():
         try:
             console.print(_HINT_TEXT_BACK if allow_back else _HINT_TEXT)
-            result = questionary.text(message, default=default or "", style=_QSTYLE).ask()
+            result = questionary.text(message, default=default or "", style=QSTYLE).ask()
             if result is None:
                 _cancel()
             result = _clean(result)
@@ -130,7 +130,7 @@ def _ask_path(
                 default=default or "",
                 only_directories=only_directories,
                 file_filter=file_filter,
-                style=_QSTYLE,
+                style=QSTYLE,
             ).ask()
             if result is None:
                 _cancel()
@@ -151,7 +151,7 @@ def _select(message: str, choices: list[Choice], default: str | None = None, all
     if has_real_console():
         try:
             console.print(_HINT_SELECT)
-            result = questionary.select(message, choices=all_choices, default=default, style=_QSTYLE).ask()
+            result = questionary.select(message, choices=all_choices, default=default, style=QSTYLE).ask()
             if result is None:
                 _cancel()
             return _BACK if result == _BACK_VALUE else result
