@@ -77,7 +77,7 @@ def banner() -> Panel:
     for line, color in zip(lines, colors):
         text.append(line + "\n", style=color)
 
-    text.append("\n          video → smart mind maps", style="dim white")
+    text.append("\n          content → smart mind maps", style="dim white")
 
     aligned = Align.center(text)
     return Panel(
@@ -94,7 +94,7 @@ def _compact_banner() -> Panel:
 
     text = Text()
     text.append(f"{_icon(NodeType.root)} cerebro", style="bold bright_magenta")
-    text.append("\nvideo → smart mind maps", style="dim white")
+    text.append("\ncontent → smart mind maps", style="dim white")
     return Panel(
         Align.center(text),
         subtitle="[dim]whisper + llm[/dim]",

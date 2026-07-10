@@ -1,3 +1,3 @@
-"""Cerebro — turn video content into XMind-compatible smart mind maps."""
+"""Cerebro — turn video and PDF content into XMind-compatible smart mind maps."""
 
 __version__ = "0.1.0"
