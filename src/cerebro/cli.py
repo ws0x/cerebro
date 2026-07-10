@@ -271,13 +271,13 @@ def map(
     source: str = typer.Argument(
         ..., help="YouTube URL or local .srt/.vtt/.txt/.mp4/.mkv/.mov/.webm/.avi/.m4v file."
     ),
-    level: str = typer.Option(None, "--level", "-l", help="brief | full | expert"),
-    fmt: str = typer.Option(None, "--format", "-f", help="opml | xmind"),
+    level: str = typer.Option(None, "--level", "-l", help="How much structure to extract: brief | full | expert (default: full, or your saved config — see cerebro config)"),
+    fmt: str = typer.Option(None, "--format", "-f", help="Output file format: opml | xmind (default: opml, or your saved config)"),
     out: Path = typer.Option(None, "--out", "-o", help="Output file path."),
-    engine: str = typer.Option(None, "--engine", "-e", help="auto | groq | gemini | heuristic"),
+    engine: str = typer.Option(None, "--engine", "-e", help="Which engine structures the content: auto | groq | gemini | heuristic (default: auto, or your saved config)"),
     no_cache: bool = typer.Option(False, "--no-cache", help="Disable the LLM response cache."),
     preview: bool = typer.Option(True, "--preview/--no-preview", help="Show the map in-terminal."),
-    whisper_model: str = typer.Option(None, "--whisper-model", help="Whisper model size to use for local video transcription."),
+    whisper_model: str = typer.Option(None, "--whisper-model", help="Whisper model size for videos with no subtitle track: tiny | base | small | medium | large-v2 | large-v3 (default: base, or your saved config) -- bigger is slower but more accurate."),
     relationship_limit: int = typer.Option(None, "--relationship-limit", "--rel-limit", help="Max number of relationships to detect in expert mode."),
     yes: bool = typer.Option(False, "--yes", "-y", help="Overwrite an existing output file without asking."),
 ):
@@ -370,16 +370,16 @@ def _do_map(
 @app.command()
 def batch(
     source: str = typer.Argument(..., help="YouTube playlist URL or local course-folder path."),
-    level: str = typer.Option(None, "--level", "-l", help="brief | full | expert"),
-    fmt: str = typer.Option(None, "--format", "-f", help="opml | xmind"),
+    level: str = typer.Option(None, "--level", "-l", help="How much structure to extract: brief | full | expert (default: full, or your saved config — see cerebro config)"),
+    fmt: str = typer.Option(None, "--format", "-f", help="Output file format: opml | xmind (default: opml, or your saved config)"),
     out: Path = typer.Option(None, "--out", "-o", help="Output file path."),
-    engine: str = typer.Option(None, "--engine", "-e", help="auto | groq | gemini | heuristic"),
+    engine: str = typer.Option(None, "--engine", "-e", help="Which engine structures the content: auto | groq | gemini | heuristic (default: auto, or your saved config)"),
     workers: int = typer.Option(3, "--workers", "-w", help="Videos/lessons processed concurrently."),
     limit: int = typer.Option(None, "--limit", help="Process only the first N items."),
     fresh: bool = typer.Option(False, "--fresh", help="Ignore any previous run of this batch; reprocess everything."),
     no_cache: bool = typer.Option(False, "--no-cache", help="Disable the LLM response cache."),
     preview: bool = typer.Option(True, "--preview/--no-preview", help="Show the map in-terminal."),
-    whisper_model: str = typer.Option(None, "--whisper-model", help="Whisper model size to use for local video transcription."),
+    whisper_model: str = typer.Option(None, "--whisper-model", help="Whisper model size for videos with no subtitle track: tiny | base | small | medium | large-v2 | large-v3 (default: base, or your saved config) -- bigger is slower but more accurate."),
     relationship_limit: int = typer.Option(None, "--relationship-limit", "--rel-limit", help="Max number of relationships to detect in expert mode."),
     yes: bool = typer.Option(False, "--yes", "-y", help="Overwrite an existing output file without asking."),
     dry_run: bool = typer.Option(
@@ -587,7 +587,7 @@ def _do_batch(
 @app.command()
 def tree(
     path: str = typer.Argument(..., help="Local folder to map (not a video/course folder)."),
-    fmt: str = typer.Option(None, "--format", "-f", help="opml | xmind"),
+    fmt: str = typer.Option(None, "--format", "-f", help="Output file format: opml | xmind (default: opml, or your saved config)"),
     out: Path = typer.Option(None, "--out", "-o", help="Output file path."),
     engine: str = typer.Option(
         None, "--engine", "-e", help="heuristic (default, free/instant) | groq | gemini — AI-labels folder purposes"
@@ -966,7 +966,12 @@ def dashboard():
 
 @app.command()
 def interactive():
-    """Guided wizard: pick a source, level, engine, and format step by step."""
+    """Guided wizard: pick a source, level, engine, and format step by step.
+
+    Identical to running `cerebro` with no arguments — this named form
+    exists for discoverability (so it shows up in --help and tab-completion)
+    and for scripts/aliases that prefer an explicit subcommand.
+    """
     # print_banner()/load_env() already ran in the _main callback, which fires
     # for every invocation regardless of which subcommand was requested.
     run_wizard(_do_map, _do_batch)
