@@ -462,6 +462,20 @@ Pass `--fresh` to ignore any previous map and rebuild everything from
 scratch (a new snapshot is still saved afterward, so the *next* run can go
 back to being incremental).
 
+## Persisted defaults (`cerebro config`)
+
+```bash
+cerebro config list             # every key, persisted value or built-in default
+cerebro config get level
+cerebro config set level expert
+cerebro config unset level      # revert to the built-in default
+```
+
+Persists to `~/.cerebro/config.json` — the same file `map`/`batch`/`tree`
+already read defaults from, previously only editable by hand. Keys: `level`,
+`format`, `engine`, `whisper_model`, `relationship_limit`. `set` validates
+the value against that key's allowed choices before writing.
+
 ## Diagnosing your setup (`cerebro doctor`)
 
 ```bash

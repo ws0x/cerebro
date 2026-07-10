@@ -25,9 +25,15 @@ def ensure_output_dir() -> Path:
     return DEFAULT_OUTPUT_DIR
 
 
-def load_config() -> dict[str, str | int]:
+def load_config(config_dir: Path | None = None) -> dict[str, str | int]:
+    # config_dir defaults via a None sentinel, not `= CONFIG_DIR` in the
+    # signature — a default bound at def-time would freeze in the value
+    # CONFIG_DIR had at import time, silently ignoring the module-level
+    # monkeypatch("cerebro.paths.CONFIG_DIR", ...) pattern tests rely on.
     import json
-    path = CONFIG_DIR / "config.json"
+    if config_dir is None:
+        config_dir = CONFIG_DIR
+    path = config_dir / "config.json"
     if path.exists():
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
@@ -36,3 +42,13 @@ def load_config() -> dict[str, str | int]:
         except Exception:
             pass
     return {}
+
+
+def save_config(data: dict, config_dir: Path | None = None) -> Path:
+    import json
+    if config_dir is None:
+        config_dir = CONFIG_DIR
+    config_dir.mkdir(parents=True, exist_ok=True)
+    path = config_dir / "config.json"
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    return path

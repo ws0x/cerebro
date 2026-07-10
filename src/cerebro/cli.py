@@ -39,7 +39,7 @@ from .ingest.folder import discover_course_sources
 from .ingest.playlist import is_playlist_url, load_playlist
 from .llm.base import LLMError
 from .llm.config import ConfigError, load_env, resolve_provider
-from .paths import ensure_output_dir, load_config
+from .paths import CONFIG_DIR, ensure_output_dir, load_config, save_config
 from .structure import HeuristicStructurer
 from .structure.llm import LLMStructurer, link_relationships
 from .ui import print_banner, print_preview
@@ -608,6 +608,77 @@ def interactive():
 
 cache_app = typer.Typer(add_completion=False, help="Inspect or clear the response cache.")
 app.add_typer(cache_app, name="cache")
+
+config_app = typer.Typer(add_completion=False, help="View or set persisted defaults, instead of hand-editing config.json.")
+app.add_typer(config_app, name="config")
+
+# (choices, default) — the single source of truth for what's a valid key/value,
+# used by both `config set`'s validation and `config list`'s fallback display.
+_CONFIG_KEYS: dict[str, tuple[tuple[str, ...] | None, str]] = {
+    "level": (("brief", "full", "expert"), "full"),
+    "format": (("opml", "xmind"), "opml"),
+    "engine": (("auto", "groq", "gemini", "heuristic"), "auto"),
+    "whisper_model": (("tiny", "base", "small", "medium", "large-v2", "large-v3"), "base"),
+    "relationship_limit": (None, "8"),
+}
+
+
+@config_app.command("list")
+def config_list():
+    """Show every persisted default, with cerebro's built-in fallback for anything unset."""
+    config = load_config()
+    table = Table.grid(padding=(0, 2))
+    for key, (_choices, default) in _CONFIG_KEYS.items():
+        value = config.get(key)
+        display = str(value) if value is not None else f"[dim](unset — default: {default})[/]"
+        table.add_row(f"[dim]{key}[/]", display)
+    console.print(Panel(table, title="[cyan]Config[/]", border_style="cyan", expand=False))
+    console.print(f"[dim]{CONFIG_DIR / 'config.json'}[/]")
+
+
+@config_app.command("get")
+def config_get(key: str = typer.Argument(..., help="level | format | engine | whisper_model | relationship_limit")):
+    """Print one config key's current value (persisted, or the built-in default)."""
+    if key not in _CONFIG_KEYS:
+        console.print(f"[red]✗[/] Unknown config key: {key} (known: {', '.join(_CONFIG_KEYS)})")
+        raise typer.Exit(code=1)
+    _choices, default = _CONFIG_KEYS[key]
+    console.print(str(load_config().get(key, default)))
+
+
+@config_app.command("set")
+def config_set(
+    key: str = typer.Argument(..., help="level | format | engine | whisper_model | relationship_limit"),
+    value: str = typer.Argument(..., help="The new value — must match the key's allowed choices."),
+):
+    """Persist a default so map/batch/tree don't need the flag every time."""
+    if key not in _CONFIG_KEYS:
+        console.print(f"[red]✗[/] Unknown config key: {key} (known: {', '.join(_CONFIG_KEYS)})")
+        raise typer.Exit(code=1)
+    choices, _default = _CONFIG_KEYS[key]
+    if choices is not None and value not in choices:
+        console.print(f"[red]✗[/] Invalid value {value!r} for {key} (choices: {', '.join(choices)})")
+        raise typer.Exit(code=1)
+    if key == "relationship_limit" and not value.isdigit():
+        console.print(f"[red]✗[/] relationship_limit must be a positive integer, got {value!r}")
+        raise typer.Exit(code=1)
+    config = load_config()
+    config[key] = value
+    save_config(config)
+    console.print(f"[green]✓[/] {key} = {value}")
+
+
+@config_app.command("unset")
+def config_unset(key: str = typer.Argument(..., help="level | format | engine | whisper_model | relationship_limit")):
+    """Remove a persisted default, reverting that key to cerebro's built-in default."""
+    config = load_config()
+    if key not in config:
+        console.print(f"[dim]{key} was already unset.[/]")
+        raise typer.Exit()
+    del config[key]
+    save_config(config)
+    default = _CONFIG_KEYS.get(key, (None, "?"))[1]
+    console.print(f"[green]✓[/] {key} unset — back to default ({default}).")
 
 
 def _human_size(n: int) -> str:
