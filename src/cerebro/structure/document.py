@@ -94,12 +94,15 @@ def _apply_fallback_notes(leaf_sections: list[tuple[Node, int, str]]) -> None:
             node.note = f"(p. {page}) {_truncate(text, _NOTE_LIMIT)}"
 
 
-def build_outline_skeleton(transcript: Transcript) -> MindMap:
+def build_outline_skeleton(transcript: Transcript, level: str = "full") -> MindMap:
     """Deterministic, zero-AI skeleton: each leaf section's note is a
-    truncated snippet of its own page-range text."""
+    truncated snippet of its own page-range text. ``level`` only labels the
+    resulting MindMap (the skeleton itself doesn't vary by level -- the
+    structure is fixed by the source's real headings) -- but it should still
+    honestly reflect what was actually requested, not silently default."""
     root, leaf_sections = _build_skeleton(transcript)
     _apply_fallback_notes(leaf_sections)
-    return MindMap(title=root.title, root=root, source=transcript.source, level="full")
+    return MindMap(title=root.title, root=root, source=transcript.source, level=level)
 
 
 # -- AI section enrichment --------------------------------------------------
@@ -176,7 +179,7 @@ def build_outline_map(
     on_event = on_event or (lambda *a, **k: None)
 
     if provider is None or level == "brief":
-        mm = build_outline_skeleton(transcript)
+        mm = build_outline_skeleton(transcript, level=level)
         on_event("done", nodes=mm.node_count(), relationships=0)
         return mm
 

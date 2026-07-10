@@ -72,6 +72,20 @@ def _two_chapter_transcript():
     )
 
 
+def test_build_outline_skeleton_honors_requested_level_label():
+    transcript = _two_chapter_transcript()
+    assert build_outline_skeleton(transcript, level="expert").level == "expert"
+    assert build_outline_skeleton(transcript, level="brief").level == "brief"
+    assert build_outline_skeleton(transcript).level == "full"  # default unchanged
+
+
+def test_build_outline_map_brief_level_labels_mindmap_as_brief_not_full():
+    transcript = _two_chapter_transcript()
+    provider = MockProvider()
+    mm = build_outline_map(transcript, provider=provider, cache=Cache(enabled=False), level="brief")
+    assert mm.level == "brief"
+
+
 def test_build_outline_map_without_provider_matches_skeleton():
     transcript = _two_chapter_transcript()
     mm = build_outline_map(transcript, provider=None)

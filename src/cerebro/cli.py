@@ -184,7 +184,7 @@ def _structure_document(transcript, level, provider, cache, relationship_limit=8
     note is kept on failure), so no top-level fallback is needed here."""
     if provider is None:
         with _spinner(f"Structuring ({level})…"):
-            return build_outline_skeleton(transcript)
+            return build_outline_skeleton(transcript, level=level)
 
     with RichProgress(
         SpinnerColumn(),
