@@ -9,4 +9,5 @@ dist/
 *.xmind
 !examples/*.opml
 !examples/*.xmind
+!examples/xmind_theme_template/*.xmind
 .cerebro-cache/
