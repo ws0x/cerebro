@@ -52,7 +52,7 @@ _EPILOG = (
 )
 
 app = typer.Typer(
-    add_completion=False,
+    add_completion=True,
     help="Turn video content into XMind-compatible smart mind maps. Run with no arguments for a guided wizard.",
     epilog=_EPILOG,
 )

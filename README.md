@@ -254,6 +254,7 @@ These come before the subcommand (`cerebro --no-color doctor`, not
 | `--ascii` | Plain ASCII glyphs instead of emoji/pictographic icons — for terminals and screen readers that handle them poorly. |
 | `--theme` | `default` \| `high-contrast` — high-contrast drops dim/low-emphasis styling in favor of your terminal's own default foreground. |
 | `--version` | Show version and exit. |
+| `--install-completion` | Install tab-completion for commands and options in your current shell (bash/zsh/fish/PowerShell). Restart your shell afterward. |
 
 ### `cerebro map SOURCE [options]`
 
