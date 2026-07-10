@@ -181,6 +181,7 @@ def run_diagnostics(
         ("questionary", "questionary"),
         ("pathspec", "pathspec"),
         ("pydantic", "pydantic"),
+        ("fitz", "pymupdf"),
     ):
         ok = _importable(mod)
         checks.append(Check(

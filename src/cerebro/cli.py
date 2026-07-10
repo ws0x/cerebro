@@ -59,6 +59,7 @@ from .llm.base import LLMError
 from .llm.config import ConfigError, load_env, read_env_file, resolve_provider, write_env_file
 from .paths import CONFIG_DIR, GLOBAL_ENV_PATH, ensure_output_dir, load_config, save_config
 from .structure import HeuristicStructurer
+from .structure.document import build_outline_map, build_outline_skeleton
 from .structure.llm import LLMStructurer, link_relationships
 from .ui import banner, print_banner, print_preview
 from .wizard import run_wizard
@@ -130,6 +131,12 @@ def _emit_result(payload: dict) -> None:
 def _structure(transcript, level, provider, cache, relationship_limit=8):
     """Build the map with the resolved engine, showing live progress and
     falling back to the offline heuristic if an LLM call fails."""
+    if transcript.outline:
+        # A source with real, pre-existing structure (currently: PDFs with a
+        # TOC/detected headings) -- the hierarchy is already known, so this
+        # skips reduce entirely rather than asking an LLM to reinvent it.
+        return _structure_document(transcript, level, provider, cache, relationship_limit)
+
     if provider is None:
         with _spinner(f"Structuring ({level})…"):
             return HeuristicStructurer().structure(transcript, level=level)
@@ -165,6 +172,48 @@ def _structure(transcript, level, provider, cache, relationship_limit=8):
             progress.stop()
             console.print(f"[yellow]! LLM engine failed ({exc}); falling back to heuristic.[/]")
             return HeuristicStructurer().structure(transcript, level=level)
+        progress.update(task, completed=progress.tasks[0].total)
+        return mm
+
+
+def _structure_document(transcript, level, provider, cache, relationship_limit=8):
+    """Outline-bearing source path (see structure/document.py): the hierarchy
+    is already known, so the LLM (if any) only enriches section content and,
+    at expert level, detects cross-section relationships. Per-leaf and link
+    failures are already handled internally there (the deterministic skeleton
+    note is kept on failure), so no top-level fallback is needed here."""
+    if provider is None:
+        with _spinner(f"Structuring ({level})…"):
+            return build_outline_skeleton(transcript)
+
+    with RichProgress(
+        SpinnerColumn(),
+        TextColumn("[cyan]{task.description}"),
+        BarColumn(),
+        TextColumn("{task.completed}/{task.total}"),
+        TimeElapsedColumn(),
+        console=console,
+        transient=True,
+        disable=json_mode(),
+    ) as progress:
+        task = progress.add_task("Thinking…", total=1)
+
+        def on_event(kind, **d):
+            if kind == "map_start":
+                progress.update(task, description="Extracting sections", total=d["total"], completed=0)
+            elif kind == "map_progress":
+                progress.update(task, completed=d["done"])
+            elif kind == "link_start":
+                progress.update(task, description="Detecting cross-links", total=1, completed=0)
+
+        mm = build_outline_map(
+            transcript,
+            provider,
+            cache,
+            level=level,
+            on_event=on_event,
+            relationship_limit=relationship_limit,
+        )
         progress.update(task, completed=progress.tasks[0].total)
         return mm
 
@@ -269,7 +318,7 @@ def _main(
 @app.command()
 def map(
     source: str = typer.Argument(
-        ..., help="YouTube URL or local .srt/.vtt/.txt/.mp4/.mkv/.mov/.webm/.avi/.m4v file."
+        ..., help="YouTube URL or local .srt/.vtt/.txt/.mp4/.mkv/.mov/.webm/.avi/.m4v/.pdf file."
     ),
     level: str = typer.Option(None, "--level", "-l", help="How much structure to extract: brief | full | expert (default: full, or your saved config — see cerebro config)"),
     fmt: str = typer.Option(None, "--format", "-f", help="Output file format: opml | xmind (default: opml, or your saved config)"),
