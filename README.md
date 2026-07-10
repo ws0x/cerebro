@@ -428,6 +428,14 @@ If a live call fails mid-run — bad key, rate limit, network blip — cerebro
 **automatically falls back to the heuristic engine** rather than crashing, so
 a run never just dies.
 
+Before it gets to that fallback, a rate-limited (HTTP 429) or transiently
+failed call is retried on the spot — honoring the API's own `Retry-After`
+header when it sends one, capped at 30s either way — with a one-line notice
+("rate limited (429) — retrying in Ns…") so a build that goes quiet for a
+few seconds under free-tier limits reads as waiting on purpose, not stuck.
+
+
+
 ## Output formats: OPML vs. XMind vs. Markdown
 
 | | OPML | Native `.xmind` | Markdown |
