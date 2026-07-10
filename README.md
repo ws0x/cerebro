@@ -449,6 +449,22 @@ Pass `--fresh` to ignore any previous map and rebuild everything from
 scratch (a new snapshot is still saved afterward, so the *next* run can go
 back to being incremental).
 
+## Diagnosing your setup (`cerebro doctor`)
+
+```bash
+cerebro doctor              # full check, including API/YouTube reachability
+cerebro doctor --no-network # skip reachability checks (faster, works offline)
+```
+
+Reports on everything that affects whether a run will succeed: which API
+keys are set (never their values), whether `ffmpeg`/`ffprobe`/Whisper are
+available for local video, whether every storage directory is actually
+writable (not just present), cache/snapshot counts, and core dependencies.
+Every check degrades independently — a missing optional piece like Whisper
+or a second engine's key is reported as an advisory (`!`), not a failure;
+`cerebro doctor` only exits non-zero on a hard failure (an unsupported
+Python version, a missing core dependency, an unwritable storage path).
+
 ## Caching
 
 Every expensive step — YouTube caption fetches, Whisper transcription, a

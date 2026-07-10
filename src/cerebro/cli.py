@@ -32,6 +32,7 @@ from . import __version__
 from .batch import BatchItem, run_batch
 from .cache import Cache
 from .convert import write_opml, write_xmind
+from .doctor import has_failures, run_diagnostics
 from .foldermap import build_folder_map, finalize_tree_snapshot, label_folders
 from .ingest import load_transcript
 from .ingest.folder import discover_course_sources
@@ -47,7 +48,7 @@ from .wizard import run_wizard
 _EPILOG = (
     'Examples: cerebro (wizard)  |  cerebro map "URL" -l expert  |  '
     'cerebro batch "playlist URL" --limit 10  |  cerebro batch ./course_folder --format xmind  |  '
-    "cerebro tree ./my_project --engine groq"
+    "cerebro tree ./my_project --engine groq  |  cerebro doctor"
 )
 
 app = typer.Typer(
@@ -500,6 +501,58 @@ def _do_tree(
         console.print()
 
     _export(mm, fmt, out, "structure", time.perf_counter() - t0)
+
+
+_STATUS_STYLE = {"ok": ("[green]✓[/]", "green"), "warn": ("[yellow]![/]", "yellow"), "fail": ("[red]✗[/]", "red")}
+
+
+@app.command()
+def doctor(
+    network: bool = typer.Option(
+        True, "--network/--no-network", help="Check API/YouTube reachability (skip for a faster, offline-only check)."
+    ),
+):
+    """Diagnose your setup: API keys, ffmpeg/Whisper, storage, connectivity.
+
+    Read-only aside from a throwaway file used to confirm each storage
+    directory is actually writable. Exits non-zero only on a hard failure —
+    a missing optional piece like Whisper or a second engine's key is
+    reported as an advisory, not an error.
+    """
+    with console.status("[cyan]Running diagnostics…", spinner="dots"):
+        checks = run_diagnostics(check_network=network)
+
+    table = Table(box=None, padding=(0, 1, 0, 0), show_header=False)
+    table.add_column(width=2)
+    table.add_column(style="bold", min_width=22)
+    table.add_column()
+    last_group = None
+    for check in checks:
+        if check.group != last_group:
+            if last_group is not None:
+                table.add_row("", "", "")
+            table.add_row("", f"[cyan]{check.group}[/]", "")
+            last_group = check.group
+        icon, color = _STATUS_STYLE[check.status]
+        detail = check.detail
+        if check.fix:
+            detail += f"\n[dim]  → {check.fix}[/]"
+        table.add_row(icon, f"  {check.label}", f"[{color}]{detail}[/]" if check.status != "ok" else detail)
+
+    console.print(Panel(table, title="[cyan]cerebro doctor[/]", border_style="cyan", expand=False))
+
+    ok_count = sum(1 for c in checks if c.status == "ok")
+    warn_count = sum(1 for c in checks if c.status == "warn")
+    fail_count = sum(1 for c in checks if c.status == "fail")
+    summary = f"[green]{ok_count} ok[/]"
+    if warn_count:
+        summary += f", [yellow]{warn_count} advisory[/]"
+    if fail_count:
+        summary += f", [red]{fail_count} failing[/]"
+    console.print(summary)
+
+    if has_failures(checks):
+        raise typer.Exit(code=1)
 
 
 @app.command()
