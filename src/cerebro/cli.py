@@ -219,13 +219,20 @@ def batch(
     engine: str = typer.Option(None, "--engine", "-e", help="auto | groq | gemini | heuristic"),
     workers: int = typer.Option(3, "--workers", "-w", help="Videos/lessons processed concurrently."),
     limit: int = typer.Option(None, "--limit", help="Process only the first N items."),
+    fresh: bool = typer.Option(False, "--fresh", help="Ignore any previous run of this batch; reprocess everything."),
     no_cache: bool = typer.Option(False, "--no-cache", help="Disable the LLM response cache."),
     preview: bool = typer.Option(True, "--preview/--no-preview", help="Show the map in-terminal."),
     whisper_model: str = typer.Option(None, "--whisper-model", help="Whisper model size to use for local video transcription."),
     relationship_limit: int = typer.Option(None, "--relationship-limit", "--rel-limit", help="Max number of relationships to detect in expert mode."),
 ):
-    """Build one combined mind map from a YouTube playlist or a local course folder."""
-    _do_batch(source, level, fmt, out, engine, workers, limit, no_cache, preview, whisper_model, relationship_limit)
+    """Build one combined mind map from a YouTube playlist or a local course folder.
+
+    Reruns are incremental by default: any video/lesson whose source exactly
+    matches a previous run of this same playlist/folder is reused as-is (no
+    transcript refetch, no restructuring) — only genuinely new items are
+    processed. Use --fresh to ignore that history and reprocess everything.
+    """
+    _do_batch(source, level, fmt, out, engine, workers, limit, fresh, no_cache, preview, whisper_model, relationship_limit)
 
 
 def _do_batch(
@@ -236,6 +243,7 @@ def _do_batch(
     engine: str | None,
     workers: int,
     limit: int | None,
+    fresh: bool,
     no_cache: bool,
     preview: bool,
     whisper_model: str | None = None,
@@ -325,8 +333,17 @@ def _do_batch(
                 if not d["ok"]:
                     failures.append((d["label"], d["error"]))
 
-        combined, outcomes = run_batch(
-            items, structurer_factory, level, title, max_workers=workers, on_event=on_event, cache=cache, whisper_model=whisper_model
+        combined, outcomes, diff = run_batch(
+            items,
+            structurer_factory,
+            level,
+            title,
+            max_workers=workers,
+            on_event=on_event,
+            cache=cache,
+            whisper_model=whisper_model,
+            incremental=not fresh,
+            batch_source=source,
         )
 
     # Each video already got its own within-video links (if any) from its own
@@ -344,6 +361,17 @@ def _do_batch(
         f"{combined.node_count()} nodes, depth {combined.depth()}"
         + (f", {len(combined.relationships)} relationships" if combined.relationships else "")
     )
+    if diff is not None:
+        since = diff.previous_built_at or "an earlier run"
+        parts = []
+        if diff.added:
+            parts.append(f"{len(diff.added)} new")
+        if diff.removed:
+            parts.append(f"{len(diff.removed)} removed")
+        change_desc = ", ".join(parts) if parts else "no changes"
+        console.print(
+            f"[dim]  ↻ Reused {len(diff.reused)}/{diff.total} item(s) since {since} — {change_desc}.[/]"
+        )
     for label, error in failures:
         console.print(f"[yellow]![/] {label}: {error}")
 

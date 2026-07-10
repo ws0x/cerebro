@@ -17,6 +17,7 @@ GLOBAL_ENV_PATH = CONFIG_DIR / ".env"
 DEFAULT_OUTPUT_DIR = Path.home() / "cerebro-maps"
 CACHE_DIR = CONFIG_DIR / "cache"
 TREE_SNAPSHOT_DIR = CONFIG_DIR / "tree-snapshots"
+BATCH_SNAPSHOT_DIR = CONFIG_DIR / "batch-snapshots"
 
 
 def ensure_output_dir() -> Path:

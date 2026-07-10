@@ -373,6 +373,23 @@ cerebro batch ./my_course_folder --format xmind
 - Every successful item becomes its own top-level branch in the final map,
   titled after the source (playlist video title or lesson filename).
 
+**Reruns are incremental by default.** cerebro remembers which items it
+successfully processed for a given playlist/folder (`~/.cerebro/batch-snapshots/`)
+and reuses their branches as-is on a rerun — no transcript refetch, no
+restructuring — so only genuinely new items (added to the playlist, or that
+failed last time and are worth retrying) get processed. Every run reports the
+delta:
+
+```
+✓ Processed 2/2 item(s) with groq:llama-3.3-70b-versatile: 46 nodes, depth 6
+  ↻ Reused 1/2 item(s) since 2026-07-10T04:10:42+00:00 — 1 new.
+```
+
+An item that failed last run (private video, rate limit, transient network
+error) is never treated as "reused" — it wasn't successfully cached, so it's
+retried fresh, same as a genuinely new item. Pass `--fresh` to ignore history
+and reprocess everything regardless.
+
 ## Local video: embedded subtitles & Whisper
 
 Point `map` or `batch` straight at a `.mp4`/`.mkv`/`.mov`/`.webm`/`.avi`/`.m4v`

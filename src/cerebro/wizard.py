@@ -254,6 +254,17 @@ def run_wizard(
 
     console.print()
     if kind in ("playlist", "folder"):
-        do_batch(source, level, fmt, out, engine, 3, None, False, True)
+        do_batch(
+            source,
+            level,
+            fmt,
+            out,
+            engine,
+            workers=3,
+            limit=None,
+            fresh=False,
+            no_cache=False,
+            preview=True,
+        )
     else:
-        do_map(source, level, fmt, out, engine, False, True)
+        do_map(source, level, fmt, out, engine, no_cache=False, preview=True)
