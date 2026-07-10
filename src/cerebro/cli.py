@@ -185,9 +185,10 @@ def map(
     preview: bool = typer.Option(True, "--preview/--no-preview", help="Show the map in-terminal."),
     whisper_model: str = typer.Option(None, "--whisper-model", help="Whisper model size to use for local video transcription."),
     relationship_limit: int = typer.Option(None, "--relationship-limit", "--rel-limit", help="Max number of relationships to detect in expert mode."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Overwrite an existing output file without asking."),
 ):
     """Build a mind map from SOURCE and write it to disk."""
-    _do_map(source, level, fmt, out, engine, no_cache, preview, whisper_model, relationship_limit)
+    _do_map(source, level, fmt, out, engine, no_cache, preview, whisper_model, relationship_limit, yes)
 
 
 def _do_map(
@@ -200,6 +201,7 @@ def _do_map(
     preview: bool,
     whisper_model: str | None = None,
     relationship_limit: int | None = None,
+    yes: bool = False,
 ) -> None:
     config = load_config()
     level = level or config.get("level") or "full"
@@ -248,10 +250,15 @@ def _do_map(
 
     if preview:
         console.print()
-        print_preview(mm)
+        # A single map is the primary view for its source, so it gets a more
+        # generous cap than batch's (4) or tree's (6) — but expert-level
+        # relationship-heavy maps can still nest deep enough to flood the
+        # terminal without any cap at all, same problem batch/tree already
+        # guard against for their own preview.
+        print_preview(mm, max_depth=8)
         console.print()
 
-    _export(mm, fmt, out, level, time.perf_counter() - t0)
+    _export(mm, fmt, out, level, time.perf_counter() - t0, yes=yes)
 
 
 @app.command()
@@ -268,6 +275,7 @@ def batch(
     preview: bool = typer.Option(True, "--preview/--no-preview", help="Show the map in-terminal."),
     whisper_model: str = typer.Option(None, "--whisper-model", help="Whisper model size to use for local video transcription."),
     relationship_limit: int = typer.Option(None, "--relationship-limit", "--rel-limit", help="Max number of relationships to detect in expert mode."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Overwrite an existing output file without asking."),
 ):
     """Build one combined mind map from a YouTube playlist or a local course folder.
 
@@ -276,7 +284,7 @@ def batch(
     transcript refetch, no restructuring) — only genuinely new items are
     processed. Use --fresh to ignore that history and reprocess everything.
     """
-    _do_batch(source, level, fmt, out, engine, workers, limit, fresh, no_cache, preview, whisper_model, relationship_limit)
+    _do_batch(source, level, fmt, out, engine, workers, limit, fresh, no_cache, preview, whisper_model, relationship_limit, yes)
 
 
 def _do_batch(
@@ -292,6 +300,7 @@ def _do_batch(
     preview: bool,
     whisper_model: str | None = None,
     relationship_limit: int | None = None,
+    yes: bool = False,
 ) -> None:
     config = load_config()
     level = level or config.get("level") or "full"
@@ -424,7 +433,7 @@ def _do_batch(
         print_preview(combined, max_depth=4)
         console.print()
 
-    _export(combined, fmt, out, level, time.perf_counter() - t0)
+    _export(combined, fmt, out, level, time.perf_counter() - t0, yes=yes)
 
 
 @app.command()
@@ -441,6 +450,7 @@ def tree(
     fresh: bool = typer.Option(False, "--fresh", help="Ignore any previous map of this folder; rebuild everything."),
     no_cache: bool = typer.Option(False, "--no-cache", help="Disable the AI-label response cache."),
     preview: bool = typer.Option(True, "--preview/--no-preview", help="Show the map in-terminal."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Overwrite an existing output file without asking."),
 ):
     """Map a folder's directory structure — not a video or course folder.
 
@@ -449,7 +459,7 @@ def tree(
     exact folder instead of being rewalked and relabeled. Use --fresh to
     ignore that history and rebuild everything.
     """
-    _do_tree(path, fmt, out, engine, max_depth, max_files, not no_gitignore, fresh, no_cache, preview)
+    _do_tree(path, fmt, out, engine, max_depth, max_files, not no_gitignore, fresh, no_cache, preview, yes)
 
 
 def _do_tree(
@@ -463,6 +473,7 @@ def _do_tree(
     fresh: bool,
     no_cache: bool,
     preview: bool,
+    yes: bool = False,
 ) -> None:
     config = load_config()
     fmt = fmt or config.get("format") or "opml"
@@ -543,7 +554,7 @@ def _do_tree(
         print_preview(mm, max_depth=6)
         console.print()
 
-    _export(mm, fmt, out, "structure", time.perf_counter() - t0)
+    _export(mm, fmt, out, "structure", time.perf_counter() - t0, yes=yes)
 
 
 _STATUS_STYLE = {"ok": ("[green]✓[/]", "green"), "warn": ("[yellow]![/]", "yellow"), "fail": ("[red]✗[/]", "red")}
@@ -722,7 +733,7 @@ def cache_clear(
     console.print(f"[green]✓[/] Removed {removed} cached entries.")
 
 
-def _export(mm, fmt: str, out: Path | None, level: str, elapsed: float) -> None:
+def _export(mm, fmt: str, out: Path | None, level: str, elapsed: float, yes: bool = False) -> None:
     if fmt not in ("opml", "xmind"):
         console.print(f"[red]✗[/] Unknown format: {fmt} (use opml or xmind)")
         raise typer.Exit(code=1)
@@ -734,6 +745,15 @@ def _export(mm, fmt: str, out: Path | None, level: str, elapsed: float) -> None:
 
     if out is None:
         out = ensure_output_dir() / f"{_safe_filename(mm.title)}.{fmt}"
+    # Applies whether `out` was explicit or auto-generated from the title —
+    # re-running the same source without --out resolves to the same default
+    # path, so it's just as capable of silently clobbering prior work.
+    if out.exists() and not yes:
+        from rich.prompt import Confirm
+
+        if not Confirm.ask(f"[yellow]![/] {out} already exists — overwrite?", default=False):
+            console.print("[dim]Cancelled — nothing written. Pass --out a different path, or --yes to overwrite.[/]")
+            raise typer.Exit(code=1)
     written = write_opml(mm, out) if fmt == "opml" else write_xmind(mm, out)
 
     summary = Table.grid(padding=(0, 2))

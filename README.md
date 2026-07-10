@@ -271,6 +271,7 @@ Build a mind map from a single source.
 | `--out`, `-o` | `~/cerebro-maps/<title>.<format>` | Output file path |
 | `--no-cache` | off | Disable the response cache for this run |
 | `--preview` / `--no-preview` | preview on | Show/hide the in-terminal tree before writing the file |
+| `--yes`, `-y` | off | Overwrite an existing output file without asking |
 
 If you don't pass `--out`, cerebro writes to a dedicated `~/cerebro-maps/`
 folder (created automatically) named after the source's title — not the
