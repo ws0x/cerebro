@@ -10,6 +10,7 @@ import re
 from pathlib import Path
 
 from ..transcript import Segment, Transcript
+from ._captions import clean_caption_text
 
 # 00:01:02,500  or  00:01:02.500  or  01:02.500
 _TS_RE = re.compile(r"(?:(\d+):)?(\d{1,2}):(\d{2})[.,](\d{1,3})")
@@ -50,6 +51,10 @@ def _parse_cue_blocks(text: str) -> list[Segment]:
         content = " ".join(lines[1:]).strip()
         # Strip simple VTT inline tags like <c> or <00:00:00.000>.
         content = re.sub(r"<[^>]+>", "", content).strip()
+        # A local file is just as often an export of auto-generated
+        # captions (downloaded from YouTube, or another auto-captioning
+        # tool) as one fetched live -- same "[Music]"-style noise tags.
+        content = clean_caption_text(content)
         if content:
             segments.append(Segment(text=content, start=start, duration=max(0.0, end - start)))
     return segments
@@ -62,7 +67,11 @@ def load_subtitle_file(path: Path) -> Transcript:
 
     if path.suffix.lower() == ".txt" and "-->" not in raw:
         # Plain text: one segment per non-empty line.
-        segments = [Segment(text=ln.strip()) for ln in raw.splitlines() if ln.strip()]
+        segments = [
+            Segment(text=clean_caption_text(ln))
+            for ln in raw.splitlines()
+            if clean_caption_text(ln)
+        ]
     else:
         segments = _parse_cue_blocks(raw)
 

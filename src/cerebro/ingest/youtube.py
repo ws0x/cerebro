@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING
 import requests
 
 from ..transcript import Segment, Transcript
+from ._captions import clean_caption_text
 
 if TYPE_CHECKING:
     from ..cache import Cache
@@ -68,15 +69,15 @@ def _fetch_segments_raw(video_id: str, languages: list[str]) -> list[dict]:
 
 
 def _raw_to_segments(raw: list[dict]) -> list[Segment]:
-    return [
-        Segment(
-            text=item["text"],
-            start=float(item.get("start", 0.0)),
-            duration=float(item.get("duration", 0.0)),
+    segments = []
+    for item in raw:
+        text = clean_caption_text(item.get("text", ""))
+        if not text:
+            continue  # was pure noise ("[Music]" and nothing else) -- not a real segment
+        segments.append(
+            Segment(text=text, start=float(item.get("start", 0.0)), duration=float(item.get("duration", 0.0)))
         )
-        for item in raw
-        if item.get("text", "").strip()
-    ]
+    return segments
 
 
 def _fetch_segments(video_id: str, languages: list[str], cache: "Cache | None" = None) -> list[Segment]:

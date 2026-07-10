@@ -1,5 +1,9 @@
 from cerebro.cache import Cache
-from cerebro.ingest.youtube import _fetch_segments, extract_video_id
+from cerebro.ingest.youtube import _fetch_segments, _raw_to_segments, extract_video_id
+
+# clean_caption_text() itself (the noise-tag regex) is unit-tested in
+# test_captions.py, shared with subtitles.py; the tests here only cover
+# _raw_to_segments' own integration of it (dropping now-empty segments).
 
 
 def test_extract_video_id_handles_common_url_shapes():
@@ -8,6 +12,22 @@ def test_extract_video_id_handles_common_url_shapes():
     assert extract_video_id("https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=30s") == "dQw4w9WgXcQ"
     assert extract_video_id("https://youtube.com/shorts/dQw4w9WgXcQ") == "dQw4w9WgXcQ"
     assert extract_video_id("dQw4w9WgXcQ") == "dQw4w9WgXcQ"
+
+
+def test_raw_to_segments_drops_pure_noise_segments():
+    raw = [
+        {"text": "hello world", "start": 0.0, "duration": 2.0},
+        {"text": "[Music]", "start": 2.0, "duration": 1.0},
+        {"text": "let's continue", "start": 3.0, "duration": 2.0},
+    ]
+    segments = _raw_to_segments(raw)
+    assert [s.text for s in segments] == ["hello world", "let's continue"]
+
+
+def test_raw_to_segments_keeps_partial_text_after_stripping_an_inline_tag():
+    raw = [{"text": "before the [Music] chorus starts", "start": 0.0, "duration": 2.0}]
+    segments = _raw_to_segments(raw)
+    assert segments[0].text == "before the chorus starts"
 
 
 def test_captions_are_cached_across_calls(tmp_path, monkeypatch):
