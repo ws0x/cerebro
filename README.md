@@ -346,6 +346,27 @@ Map a folder's directory structure — see
 Launches the guided wizard explicitly (same as running `cerebro` with no
 arguments).
 
+### `cerebro search QUERY [options]`
+
+Search every map you've already built for a topic — once you've generated a
+handful of them, "which one talks about X" becomes its own problem.
+
+```bash
+cerebro search "backpropagation"
+cerebro search "consistent hashing" --dir ./some/other/output/folder
+```
+
+Plain substring match (case-insensitive by default) against every node's
+title and note, across every `.opml`/`.xmind` file in `~/cerebro-maps/`
+(or `--dir`), recursively. Prints the matching file, node title, and a note
+snippet for each hit.
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--dir`, `-d` | `~/cerebro-maps` | Folder to search |
+| `--case-sensitive` | off | Match case exactly |
+| `--limit` | `10` | Max matches shown per file |
+
 ### `cerebro cache stats` / `cerebro cache clear`
 
 Inspect or wipe the response cache — see [Caching](#caching).

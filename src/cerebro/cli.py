@@ -60,6 +60,7 @@ from .llm.config import ConfigError, load_env, read_env_file, resolve_provider, 
 from .manifest import lookup as manifest_lookup
 from .manifest import record as manifest_record
 from .paths import CONFIG_DIR, GLOBAL_ENV_PATH, ensure_output_dir, load_config, save_config
+from .search import search_maps
 from .structure import HeuristicStructurer
 from .structure.document import OutlineAwareStructurer, build_outline_map, build_outline_skeleton
 from .structure.llm import LLMStructurer, link_relationships
@@ -962,6 +963,60 @@ def status():
 
     if not tree_snaps and not batch_snaps:
         console.print("[dim]No incremental history yet — run `cerebro tree` or `cerebro batch` to build some.[/]")
+
+
+_SEARCH_NOTE_SNIPPET_LEN = 100
+
+
+@app.command()
+def search(
+    query: str = typer.Argument(..., help="Text to look for in every previously-built map's node titles/notes."),
+    maps_dir: Path = typer.Option(None, "--dir", "-d", help="Folder to search (default: ~/cerebro-maps, where maps land unless --out pointed elsewhere)."),
+    case_sensitive: bool = typer.Option(False, "--case-sensitive", help="Match case exactly instead of ignoring it."),
+    limit: int = typer.Option(10, "--limit", help="Max matches shown per file."),
+):
+    """Search every OPML/XMind map you've already built for a topic.
+
+    Once you've generated a handful of maps, "which one talks about X"
+    becomes its own problem this answers without reopening each one by hand.
+    """
+    search_dir = maps_dir or ensure_output_dir()
+    results = search_maps(query, search_dir, case_sensitive=case_sensitive, max_matches_per_file=limit)
+
+    if json_mode():
+        _emit_result({
+            "ok": True,
+            "query": query,
+            "dir": str(search_dir),
+            "maps_matched": len(results),
+            "results": [
+                {
+                    "path": str(r.path),
+                    "matches": [{"title": n.title, "note": n.note} for n in r.nodes],
+                }
+                for r in results
+            ],
+        })
+        return
+
+    if not results:
+        console.print(f"[dim]No matches for \"{query}\" under {search_dir}.[/]")
+        return
+
+    total_matches = sum(len(r.nodes) for r in results)
+    console.print(
+        f"[green]✓[/] {total_matches} match(es) in [bold]{len(results)}[/] map(s) matching [bold]\"{query}\"[/]\n"
+    )
+    for r in results:
+        console.print(f"[bold cyan]{r.path.name}[/] [dim]({r.path})[/]")
+        for n in r.nodes:
+            console.print(f"  • {n.title}")
+            if n.note:
+                snippet = n.note.replace("\n", " ").strip()
+                if len(snippet) > _SEARCH_NOTE_SNIPPET_LEN:
+                    snippet = snippet[:_SEARCH_NOTE_SNIPPET_LEN].rstrip() + "…"
+                console.print(f"    [dim]{snippet}[/]")
+        console.print()
 
 
 def _dashboard_layout():
