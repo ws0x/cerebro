@@ -255,6 +255,7 @@ These come before the subcommand (`cerebro --no-color doctor`, not
 | `--theme` | `default` \| `high-contrast` — high-contrast drops dim/low-emphasis styling in favor of your terminal's own default foreground. |
 | `--version` | Show version and exit. |
 | `--install-completion` | Install tab-completion for commands and options in your current shell (bash/zsh/fish/PowerShell). Restart your shell afterward. |
+| `--quiet`, `-q` | Suppress the banner and informational status lines (map/batch/tree). Errors, warnings, and the final result still print — this drops decoration, not answers. |
 
 ### `cerebro map SOURCE [options]`
 

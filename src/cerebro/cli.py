@@ -30,7 +30,7 @@ from rich.table import Table
 from . import __version__
 from .batch import BatchItem, dry_run_batch, forget_batch_snapshot, list_batch_snapshots, run_batch
 from .cache import Cache
-from .console import console, has_real_console, set_ascii, set_high_contrast
+from .console import console, has_real_console, qprint, quiet_mode, set_ascii, set_high_contrast, set_quiet
 from .convert import write_opml, write_xmind
 from .doctor import has_failures, run_diagnostics
 from .foldermap import (
@@ -141,6 +141,12 @@ def _theme_callback(value: str):
     return value
 
 
+def _quiet_callback(value: bool):
+    if value:
+        set_quiet(True)
+    return value
+
+
 @app.callback(invoke_without_command=True)
 def _main(
     ctx: typer.Context,
@@ -168,11 +174,20 @@ def _main(
         is_eager=True,
         help="default | high-contrast — high-contrast drops dim/low-emphasis styling in favor of your terminal's own default foreground.",
     ),
+    quiet: bool = typer.Option(
+        False,
+        "--quiet",
+        "-q",
+        callback=_quiet_callback,
+        is_eager=True,
+        help="Suppress the banner and informational status lines (map/batch/tree). Errors, warnings, and the final result still print — this drops decoration, not answers.",
+    ),
 ):
     """Cerebro root."""
     if _HELP_REQUESTED:
         return  # a --help lookup is a reference check, not a real run
-    print_banner()
+    if not quiet_mode():
+        print_banner()
     load_env()
     if ctx.invoked_subcommand is None:
         run_wizard(_do_map, _do_batch)
@@ -231,7 +246,7 @@ def _do_map(
     except Exception as exc:
         console.print(f"[red]✗ Failed to load transcript: {exc}[/]")
         raise typer.Exit(code=1)
-    console.print(
+    qprint(
         f"[green]✓[/] Transcript: [bold]{transcript.title}[/] "
         f"— {transcript.word_count:,} words, {len(transcript.segments):,} segments"
     )
@@ -245,10 +260,10 @@ def _do_map(
 
     engine_label = "heuristic (offline)" if provider is None else f"{provider.name}:{provider.model}"
     if provider is None and engine == "auto":
-        console.print("[yellow]![/] No API key found — using the offline heuristic engine.")
+        qprint("[yellow]![/] No API key found — using the offline heuristic engine.")
 
     mm = _structure(transcript, level, provider, cache, relationship_limit=relationship_limit)
-    console.print(
+    qprint(
         f"[green]✓[/] Map built with [bold]{engine_label}[/]: "
         f"{mm.node_count()} nodes, depth {mm.depth()}"
         + (f", {len(mm.relationships)} relationships" if mm.relationships else "")
@@ -350,11 +365,11 @@ def _do_batch(
     if limit is not None:
         items = items[:limit]
 
-    console.print(f"[green]✓[/] Found [bold]{total_found}[/] item(s) in [bold]{title}[/]")
+    qprint(f"[green]✓[/] Found [bold]{total_found}[/] item(s) in [bold]{title}[/]")
     if limit is not None and total_found > limit:
-        console.print(f"[dim]  Processing first {len(items)} (--limit {limit}).[/]")
+        qprint(f"[dim]  Processing first {len(items)} (--limit {limit}).[/]")
     if transcribe_count:
-        console.print(
+        qprint(
             f"[dim]  {transcribe_count} video(s) have no subtitle file — will extract an "
             "embedded track or transcribe with Whisper (slower).[/]"
         )
@@ -376,7 +391,7 @@ def _do_batch(
 
     engine_label = "heuristic (offline)" if provider is None else f"{provider.name}:{provider.model}"
     if provider is None and engine == "auto":
-        console.print("[yellow]![/] No API key found — using the offline heuristic engine.")
+        qprint("[yellow]![/] No API key found — using the offline heuristic engine.")
 
     cache = Cache(enabled=not no_cache)
 
@@ -428,7 +443,7 @@ def _do_batch(
             )
 
     ok_count = sum(1 for o in outcomes if o.mindmap is not None)
-    console.print(
+    qprint(
         f"[green]✓[/] Processed {ok_count}/{len(items)} item(s) with [bold]{engine_label}[/]: "
         f"{combined.node_count()} nodes, depth {combined.depth()}"
         + (f", {len(combined.relationships)} relationships" if combined.relationships else "")
@@ -441,11 +456,11 @@ def _do_batch(
         if diff.removed:
             parts.append(f"{len(diff.removed)} removed")
         change_desc = ", ".join(parts) if parts else "no changes"
-        console.print(
+        qprint(
             f"[dim]  ↻ Reused {len(diff.reused)}/{diff.total} item(s) since {since} — {change_desc}.[/]"
         )
     for label, error in failures:
-        console.print(f"[yellow]![/] {label}: {error}")
+        console.print(f"[yellow]![/] {label}: {error}")  # a real per-item failure, not decoration -- always shown
 
     if preview:
         console.print()
@@ -517,7 +532,7 @@ def _do_tree(
         console.print(f"[red]✗ {exc}[/]")
         raise typer.Exit(code=1)
 
-    console.print(f"[green]✓[/] Walked [bold]{path}[/]: {mm.node_count()} nodes, depth {mm.depth()}")
+    qprint(f"[green]✓[/] Walked [bold]{path}[/]: {mm.node_count()} nodes, depth {mm.depth()}")
     if diff is not None:
         since = diff.previous_built_at or "an earlier run"
         parts = []
@@ -528,7 +543,7 @@ def _do_tree(
         if diff.deleted:
             parts.append(f"{len(diff.deleted)} deleted")
         change_desc = ", ".join(parts) if parts else "no changes"
-        console.print(
+        qprint(
             f"[dim]  ↻ Reused {len(diff.reused)}/{diff.total} folder(s) since {since} — {change_desc}.[/]"
         )
 
@@ -569,14 +584,14 @@ def _do_tree(
                         progress.update(task, completed=d["done"])
 
                 label_folders(mm, provider, cache, nodes=nodes_needing_labels, on_event=on_event)
-            console.print(
+            qprint(
                 f"[green]✓[/] Labeled {len(nodes_needing_labels)} folder(s) with "
                 f"[bold]{provider.name}:{provider.model}[/]"
             )
         else:
-            console.print("[dim]  All folders already labeled from a previous run.[/]")
+            qprint("[dim]  All folders already labeled from a previous run.[/]")
     elif engine != "heuristic":
-        console.print("[yellow]![/] No API key found — skipping AI folder labeling.")
+        qprint("[yellow]![/] No API key found — skipping AI folder labeling.")
 
     # Saved only now, after any labeling above has finished mutating notes —
     # saving earlier would silently lose every label just assigned.
@@ -910,9 +925,9 @@ def _export(mm, fmt: str, out: Path | None, level: str, elapsed: float, yes: boo
     summary.add_row("[dim]Time[/]", f"{elapsed:.2f}s")
     console.print(Panel(summary, title="[green]Done[/]", border_style="green", expand=False))
     if fmt == "opml":
-        console.print(f"[dim]Import into XMind: File → Import → OPML → {written.name}[/]")
+        qprint(f"[dim]Import into XMind: File → Import → OPML → {written.name}[/]")
     else:
-        console.print(f"[dim]Open directly in XMind: {written.name}[/]")
+        qprint(f"[dim]Open directly in XMind: {written.name}[/]")
 
 
 def run() -> None:

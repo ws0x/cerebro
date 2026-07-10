@@ -30,6 +30,7 @@ console = Console()
 _HIGH_CONTRAST_THEME = Theme({"dim": "bold", "deep_pink3": "bold", "bright_magenta": "bold"})
 
 _ascii_mode = False
+_quiet_mode = False
 
 
 def set_high_contrast(enabled: bool) -> None:
@@ -44,6 +45,28 @@ def set_ascii(enabled: bool) -> None:
 
 def ascii_mode() -> bool:
     return _ascii_mode
+
+
+def set_quiet(enabled: bool) -> None:
+    global _quiet_mode
+    _quiet_mode = enabled
+
+
+def quiet_mode() -> bool:
+    return _quiet_mode
+
+
+def qprint(*args, **kwargs) -> None:
+    """console.print, except a no-op in --quiet mode.
+
+    For the informational "here's what's happening" lines (banner aside,
+    which is skipped separately) — not for errors/warnings, and not for the
+    final result, both of which still print in quiet mode since the point of
+    --quiet is dropping decoration, not hiding whether the command worked or
+    where its output went.
+    """
+    if not _quiet_mode:
+        console.print(*args, **kwargs)
 
 
 def has_real_console() -> bool:

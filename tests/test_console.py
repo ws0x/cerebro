@@ -61,6 +61,33 @@ def test_icon_switches_between_emoji_and_ascii():
     assert ascii_icon.isascii()
 
 
+def test_qprint_is_silent_when_quiet_is_on():
+    buf = StringIO()
+    c = Console(file=buf, force_terminal=True)
+    monkeypatch_console = console_module.console
+    console_module.console = c
+    try:
+        console_module.set_quiet(True)
+        console_module.qprint("hidden")
+        console_module.set_quiet(False)
+        console_module.qprint("shown")
+    finally:
+        console_module.console = monkeypatch_console
+        console_module.set_quiet(False)
+    out = buf.getvalue()
+    assert "hidden" not in out
+    assert "shown" in out
+
+
+def test_quiet_mode_toggle():
+    assert console_module.quiet_mode() is False
+    console_module.set_quiet(True)
+    try:
+        assert console_module.quiet_mode() is True
+    finally:
+        console_module.set_quiet(False)
+
+
 def test_high_contrast_theme_overrides_dim_to_bold(monkeypatch):
     buf = StringIO()
     c = Console(file=buf, force_terminal=True)
