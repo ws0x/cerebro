@@ -21,3 +21,16 @@ CACHE_DIR = CONFIG_DIR / "cache"
 def ensure_output_dir() -> Path:
     DEFAULT_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     return DEFAULT_OUTPUT_DIR
+
+
+def load_config() -> dict[str, str | int]:
+    import json
+    path = CONFIG_DIR / "config.json"
+    if path.exists():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return data
+        except Exception:
+            pass
+    return {}

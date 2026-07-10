@@ -31,7 +31,7 @@ from rich.table import Table
 
 from .ingest import looks_like_youtube
 from .ingest.playlist import is_playlist_url
-from .paths import ensure_output_dir
+from .paths import ensure_output_dir, load_config
 
 console = Console()
 
@@ -42,9 +42,9 @@ _QSTYLE = Style(
         ("qmark", "fg:#29b6c9 bold"),
         ("question", "bold"),
         ("answer", "fg:#29b6c9 bold"),
-        ("pointer", "fg:#29b6c9 bold"),
-        ("highlighted", "fg:#29b6c9 bold"),
-        ("selected", "fg:#29b6c9"),
+        ("pointer", "fg:#ff2a7f bold"),
+        ("highlighted", "fg:#ff2a7f bold"),
+        ("selected", "fg:#ff2a7f"),
     ]
 )
 
@@ -148,16 +148,17 @@ def _ask_source() -> tuple[str, str]:
         return source, kind
 
 
-def _ask_level() -> str:
-    return _select("Processing level:", _LEVEL_CHOICES, default="full")
+def _ask_level(default: str = "full") -> str:
+    return _select("Processing level:", _LEVEL_CHOICES, default=default)
 
 
-def _ask_engine() -> str:
-    return _select("Engine:", _ENGINE_CHOICES, default="auto")
+def _ask_engine(default: str = "auto") -> str:
+    return _select("Engine:", _ENGINE_CHOICES, default=default)
 
 
-def _ask_format(level: str) -> str:
-    default = "xmind" if level == "expert" else "opml"
+def _ask_format(level: str, default: str | None = None) -> str:
+    if default is None:
+        default = "xmind" if level == "expert" else "opml"
     hint = (
         "expert level has relationships — xmind keeps them, opml would drop them"
         if level == "expert"
@@ -194,15 +195,20 @@ def run_wizard(
     do_map: Callable[[str, str, str, Path, str, bool, bool], None],
     do_batch: Callable[[str, str, str, Path, str, int, int | None, bool, bool], None],
 ) -> None:
+    config = load_config()
+    cfg_level = str(config.get("level") or "full")
+    cfg_engine = str(config.get("engine") or "auto")
+    cfg_format = str(config.get("format") or ("xmind" if cfg_level == "expert" else "opml"))
+
     console.print(Rule("[bold cyan]Source[/]", style="cyan"))
     console.print("[dim]Ctrl+C to cancel anytime[/]\n")
     source, kind = _ask_source()
 
     console.print()
     console.print(Rule("[bold cyan]Options[/]", style="cyan"))
-    level = _ask_level()
-    engine = _ask_engine()
-    fmt = _ask_format(level)
+    level = _ask_level(default=cfg_level)
+    engine = _ask_engine(default=cfg_engine)
+    fmt = _ask_format(level, default=cfg_format)
     out = _ask_output(fmt)
 
     while True:

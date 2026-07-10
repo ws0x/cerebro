@@ -14,13 +14,14 @@ from .ir import MindMap, Node, NodeType
 
 console = Console()
 
-_BANNER = r"""
-  ___  ___  ___  ___  ___  ___  ___
- / __|| __|| _ \| __|| _ )| _ \/ _ \
-| (__ | _| |   /| _| | _ \|   / (_) |
- \___||___||_|_\|___||___/|_|_\\___/
-     video  ->  smart mind maps
-"""
+_BANNER_ART = (
+    r"   ______   ______  ____    ______  ____     ____    ____  " + "\n"
+    r"  / ____/  / ____/ / __ \  / ____/ / __ )   / __ \  / __ \ " + "\n"
+    r" / /      / __/   / /_/ / / __/   / __  |  / /_/ / / / / / " + "\n"
+    r"/ /___   / /___  / _, _/ / /___  / /_/ /  / _, _/ / /_/ /  " + "\n"
+    r"\____/  /_____/ /_/ |_| /_____/ /_____/  /_/ |_|  \____/   "
+)
+
 
 # Icon per semantic node type, for the terminal preview.
 _TYPE_ICON = {
@@ -38,8 +39,25 @@ _TYPE_ICON = {
 
 
 def banner() -> Panel:
-    text = Text(_BANNER, style="bold cyan")
-    return Panel(text, border_style="cyan", expand=False, subtitle="cerebro")
+    from rich.align import Align
+    
+    text = Text()
+    lines = _BANNER_ART.split("\n")
+    # Apply vertical gradient coloring
+    colors = ["cyan", "cyan", "deep_pink3", "bright_magenta", "bright_magenta"]
+    for line, color in zip(lines, colors):
+        text.append(line + "\n", style=color)
+        
+    text.append("\n          video → smart mind maps", style="dim white")
+    
+    aligned = Align.center(text)
+    return Panel(
+        aligned,
+        title="[bold bright_magenta]cerebro[/bold bright_magenta]",
+        subtitle="[dim]whisper + llm[/dim]",
+        border_style="deep_pink3",
+        expand=True,
+    )
 
 
 def print_banner() -> None:

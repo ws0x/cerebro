@@ -107,5 +107,5 @@ class MockProvider:
                 ],
             }
         if "TASK: LINK" in system:
-            return {"relationships": [{"from": 0, "to": 1, "label": "relates to"}]}
+            return {"relationships": [{"from": 1, "to": 3, "label": "relates to"}]}
         return {}

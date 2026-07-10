@@ -43,13 +43,14 @@ def run_batch(
     max_workers: int = 3,
     on_event: Callable[..., None] | None = None,
     cache: "Cache | None" = None,
+    whisper_model: str = "base",
 ) -> tuple[MindMap, list[BatchOutcome]]:
     on_event = on_event or (lambda *a, **k: None)
 
     def _process(item: BatchItem) -> BatchOutcome:
         t0 = time.perf_counter()
         try:
-            transcript = load_transcript(item.source, cache=cache)
+            transcript = load_transcript(item.source, whisper_model=whisper_model, cache=cache)
             mm = structurer_factory().structure(transcript, level=level)
             return BatchOutcome(item.label, mm, None, time.perf_counter() - t0)
         except Exception as exc:  # an item's failure must not abort the batch

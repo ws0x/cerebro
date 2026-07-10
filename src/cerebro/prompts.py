@@ -5,7 +5,7 @@ literal JSON braces doubled (``{{`` / ``}}``). Bump ``PROMPT_VERSION`` whenever 
 prompt changes so the cache invalidates cleanly (it is part of every cache key).
 """
 
-PROMPT_VERSION = "v2"
+PROMPT_VERSION = "v3"
 
 NODE_TYPES = "topic, concept, definition, example, insight, action, warning, question, detail"
 
@@ -21,6 +21,8 @@ You receive one segment of a video transcript. Extract its core teaching as a
 compact JSON object. Do not summarize the whole video — only this segment.
 
 {grounding}
+
+Write all titles, summaries, and points in the same language as the input transcript. Keep JSON keys in English.
 
 Return ONLY JSON with this shape:
 {{
@@ -44,6 +46,8 @@ This applies to merging too: you may rename a branch to a more general umbrella
 term that covers its children, but never invent a more specific term than what
 the segments actually contain.
 
+Write all titles, notes, and central subject in the same language as the input segments. Keep JSON keys in English.
+
 Return ONLY JSON with this shape (children may nest to any depth):
 {{
   "central": "the overall subject, a short noun phrase",
@@ -58,20 +62,50 @@ Return ONLY JSON with this shape (children may nest to any depth):
 }}
 Aim for {depth}. Every title must be self-contained and concise."""
 
-LINK_SYSTEM = """You are an expert knowledge cartographer. TASK: LINK.
+_LINK_TEMPLATE = """You are an expert knowledge cartographer. TASK: LINK.
 You receive a numbered list of nodes from a finished mind map. Identify the most
 important NON-hierarchical relationships between them (dependency, cause,
 contrast, example-of, prerequisite). Only link nodes in different branches.
 Only propose a relationship that is actually supported by the node titles given
 — do not invent a connection that isn't reasonably implied by them.
 
+Write the label in the same language as the node titles. Keep JSON keys in English.
+
 Return ONLY JSON:
-{
+{{
   "relationships": [
-    {"from": 0, "to": 1, "label": "short verb phrase"}
+    {{"from": 0, "to": 1, "label": "short verb phrase"}}
   ]
-}
-Return at most 8 of the strongest relationships. Use the integer ids shown."""
+}}
+Return at most {limit} of the strongest relationships. Use the integer ids shown."""
+
+_CROSS_LINK_TEMPLATE = """You are an expert knowledge cartographer. TASK: CROSS-VIDEO LINKING.
+You receive a numbered list of nodes from a course/playlist mind map. Each node includes the video/lesson title it belongs to.
+Identify the most important connections (dependency, cause, contrast, prerequisite, builds-on) between concepts in DIFFERENT videos.
+Do NOT link nodes within the same video.
+Only propose a relationship that is actually supported by the titles and context given — do not invent a connection that isn't reasonably implied.
+
+Write the label in the same language as the node titles. Keep JSON keys in English.
+
+Return ONLY JSON:
+{{
+  "relationships": [
+    {{"from": 0, "to": 1, "label": "short verb phrase"}}
+  ]
+}}
+Return at most {limit} of the strongest cross-video relationships. Use the integer ids shown."""
+
+
+def link_system(limit: int) -> str:
+    return _LINK_TEMPLATE.format(limit=limit)
+
+
+def cross_link_system(limit: int) -> str:
+    return _CROSS_LINK_TEMPLATE.format(limit=limit)
+
+
+# For backward compatibility
+LINK_SYSTEM = link_system(8)
 
 # Per-level guidance injected into the REDUCE prompt.
 LEVEL_DEPTH = {

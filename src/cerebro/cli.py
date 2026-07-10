@@ -37,9 +37,9 @@ from .ingest.folder import discover_course_sources
 from .ingest.playlist import is_playlist_url, load_playlist
 from .llm.base import LLMError
 from .llm.config import ConfigError, load_env, resolve_provider
-from .paths import ensure_output_dir
+from .paths import ensure_output_dir, load_config
 from .structure import HeuristicStructurer
-from .structure.llm import LLMStructurer
+from .structure.llm import LLMStructurer, link_relationships
 from .ui import print_banner, print_preview
 from .wizard import run_wizard
 
@@ -63,7 +63,7 @@ def _safe_filename(title: str) -> str:
     return (name or "mindmap")[:80]
 
 
-def _structure(transcript, level, provider, cache):
+def _structure(transcript, level, provider, cache, relationship_limit=8):
     """Build the map with the resolved engine, showing live progress and
     falling back to the offline heuristic if an LLM call fails."""
     if provider is None:
@@ -91,7 +91,9 @@ def _structure(transcript, level, provider, cache):
             elif kind == "link_start":
                 progress.update(task, description="Detecting cross-links", total=1, completed=0)
 
-        structurer = LLMStructurer(provider, cache, on_event=on_event)
+        structurer = LLMStructurer(
+            provider, cache, on_event=on_event, relationship_limit=relationship_limit
+        )
         try:
             mm = structurer.structure(transcript, level=level)
         except LLMError as exc:
@@ -129,26 +131,49 @@ def map(
     source: str = typer.Argument(
         ..., help="YouTube URL or local .srt/.vtt/.txt/.mp4/.mkv/.mov/.webm/.avi/.m4v file."
     ),
-    level: str = typer.Option("full", "--level", "-l", help="brief | full | expert"),
-    fmt: str = typer.Option("opml", "--format", "-f", help="opml | xmind"),
+    level: str = typer.Option(None, "--level", "-l", help="brief | full | expert"),
+    fmt: str = typer.Option(None, "--format", "-f", help="opml | xmind"),
     out: Path = typer.Option(None, "--out", "-o", help="Output file path."),
-    engine: str = typer.Option("auto", "--engine", "-e", help="auto | groq | gemini | heuristic"),
+    engine: str = typer.Option(None, "--engine", "-e", help="auto | groq | gemini | heuristic"),
     no_cache: bool = typer.Option(False, "--no-cache", help="Disable the LLM response cache."),
     preview: bool = typer.Option(True, "--preview/--no-preview", help="Show the map in-terminal."),
+    whisper_model: str = typer.Option(None, "--whisper-model", help="Whisper model size to use for local video transcription."),
+    relationship_limit: int = typer.Option(None, "--relationship-limit", "--rel-limit", help="Max number of relationships to detect in expert mode."),
 ):
     """Build a mind map from SOURCE and write it to disk."""
-    _do_map(source, level, fmt, out, engine, no_cache, preview)
+    _do_map(source, level, fmt, out, engine, no_cache, preview, whisper_model, relationship_limit)
 
 
 def _do_map(
-    source: str, level: str, fmt: str, out: Path | None, engine: str, no_cache: bool, preview: bool
+    source: str,
+    level: str | None,
+    fmt: str | None,
+    out: Path | None,
+    engine: str | None,
+    no_cache: bool,
+    preview: bool,
+    whisper_model: str | None = None,
+    relationship_limit: int | None = None,
 ) -> None:
+    config = load_config()
+    level = level or config.get("level") or "full"
+    fmt = fmt or config.get("format") or "opml"
+    engine = engine or config.get("engine") or "auto"
+    whisper_model = whisper_model or config.get("whisper_model") or "base"
+
+    if relationship_limit is None:
+        cfg_lim = config.get("relationship_limit")
+        try:
+            relationship_limit = int(cfg_lim) if cfg_lim is not None else 8
+        except ValueError:
+            relationship_limit = 8
+
     t0 = time.perf_counter()
     cache = Cache(enabled=not no_cache)
 
     try:
         with console.status("[cyan]Loading transcript…", spinner="dots"):
-            transcript = load_transcript(source, cache=cache)
+            transcript = load_transcript(source, whisper_model=whisper_model, cache=cache)
     except Exception as exc:
         console.print(f"[red]✗ Failed to load transcript: {exc}[/]")
         raise typer.Exit(code=1)
@@ -168,7 +193,7 @@ def _do_map(
     if provider is None and engine == "auto":
         console.print("[yellow]![/] No API key found — using the offline heuristic engine.")
 
-    mm = _structure(transcript, level, provider, cache)
+    mm = _structure(transcript, level, provider, cache, relationship_limit=relationship_limit)
     console.print(
         f"[green]✓[/] Map built with [bold]{engine_label}[/]: "
         f"{mm.node_count()} nodes, depth {mm.depth()}"
@@ -186,30 +211,47 @@ def _do_map(
 @app.command()
 def batch(
     source: str = typer.Argument(..., help="YouTube playlist URL or local course-folder path."),
-    level: str = typer.Option("full", "--level", "-l", help="brief | full | expert"),
-    fmt: str = typer.Option("opml", "--format", "-f", help="opml | xmind"),
+    level: str = typer.Option(None, "--level", "-l", help="brief | full | expert"),
+    fmt: str = typer.Option(None, "--format", "-f", help="opml | xmind"),
     out: Path = typer.Option(None, "--out", "-o", help="Output file path."),
-    engine: str = typer.Option("auto", "--engine", "-e", help="auto | groq | gemini | heuristic"),
+    engine: str = typer.Option(None, "--engine", "-e", help="auto | groq | gemini | heuristic"),
     workers: int = typer.Option(3, "--workers", "-w", help="Videos/lessons processed concurrently."),
     limit: int = typer.Option(None, "--limit", help="Process only the first N items."),
     no_cache: bool = typer.Option(False, "--no-cache", help="Disable the LLM response cache."),
     preview: bool = typer.Option(True, "--preview/--no-preview", help="Show the map in-terminal."),
+    whisper_model: str = typer.Option(None, "--whisper-model", help="Whisper model size to use for local video transcription."),
+    relationship_limit: int = typer.Option(None, "--relationship-limit", "--rel-limit", help="Max number of relationships to detect in expert mode."),
 ):
     """Build one combined mind map from a YouTube playlist or a local course folder."""
-    _do_batch(source, level, fmt, out, engine, workers, limit, no_cache, preview)
+    _do_batch(source, level, fmt, out, engine, workers, limit, no_cache, preview, whisper_model, relationship_limit)
 
 
 def _do_batch(
     source: str,
-    level: str,
-    fmt: str,
+    level: str | None,
+    fmt: str | None,
     out: Path | None,
-    engine: str,
+    engine: str | None,
     workers: int,
     limit: int | None,
     no_cache: bool,
     preview: bool,
+    whisper_model: str | None = None,
+    relationship_limit: int | None = None,
 ) -> None:
+    config = load_config()
+    level = level or config.get("level") or "full"
+    fmt = fmt or config.get("format") or "opml"
+    engine = engine or config.get("engine") or "auto"
+    whisper_model = whisper_model or config.get("whisper_model") or "base"
+
+    if relationship_limit is None:
+        cfg_lim = config.get("relationship_limit")
+        try:
+            relationship_limit = int(cfg_lim) if cfg_lim is not None else 8
+        except ValueError:
+            relationship_limit = 8
+
     t0 = time.perf_counter()
 
     transcribe_count = 0
@@ -260,7 +302,9 @@ def _do_batch(
         # Halve the per-video map-call concurrency so total concurrent LLM
         # requests (batch workers × per-video workers) stays bounded — free-tier
         # rate limits don't scale with playlist size.
-        return HeuristicStructurer() if provider is None else LLMStructurer(provider, cache, max_workers=2)
+        return HeuristicStructurer() if provider is None else LLMStructurer(
+            provider, cache, max_workers=2, relationship_limit=relationship_limit
+        )
 
     failures: list[tuple[str, str]] = []
     with RichProgress(
@@ -280,8 +324,17 @@ def _do_batch(
                     failures.append((d["label"], d["error"]))
 
         combined, outcomes = run_batch(
-            items, structurer_factory, level, title, max_workers=workers, on_event=on_event, cache=cache
+            items, structurer_factory, level, title, max_workers=workers, on_event=on_event, cache=cache, whisper_model=whisper_model
         )
+
+    # Each video already got its own within-video links (if any) from its own
+    # expert-level structuring above; this second pass looks across all of
+    # them together, so a concept in lesson 2 can connect to one in lesson 7.
+    if level == "expert" and provider is not None and combined.node_count() > 3:
+        with console.status("[cyan]Finding connections across videos…", spinner="dots"):
+            link_relationships(
+                combined, provider, cache, cross_video=True, relationship_limit=relationship_limit
+            )
 
     ok_count = sum(1 for o in outcomes if o.mindmap is not None)
     console.print(
