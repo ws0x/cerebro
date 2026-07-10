@@ -23,17 +23,15 @@ from typing import Callable
 import questionary
 import typer
 from questionary import Choice, Style
-from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.rule import Rule
 from rich.table import Table
 
+from .console import console
 from .ingest import looks_like_youtube
 from .ingest.playlist import is_playlist_url
 from .paths import ensure_output_dir, load_config
-
-console = Console()
 
 # Matches Rich's cyan accent used everywhere else in the CLI, so the arrow-key
 # menus don't feel like a different tool bolted on.

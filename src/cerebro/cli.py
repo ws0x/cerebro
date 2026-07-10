@@ -22,7 +22,6 @@ def _force_utf8() -> None:
 _force_utf8()
 
 import typer
-from rich.console import Console
 from rich.panel import Panel
 from rich.progress import BarColumn, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.progress import Progress as RichProgress
@@ -31,6 +30,7 @@ from rich.table import Table
 from . import __version__
 from .batch import BatchItem, run_batch
 from .cache import Cache
+from .console import console
 from .convert import write_opml, write_xmind
 from .doctor import has_failures, run_diagnostics
 from .foldermap import build_folder_map, finalize_tree_snapshot, label_folders
@@ -56,7 +56,6 @@ app = typer.Typer(
     help="Turn video content into XMind-compatible smart mind maps. Run with no arguments for a guided wizard.",
     epilog=_EPILOG,
 )
-console = Console()
 
 _HELP_REQUESTED = "--help" in sys.argv[1:]
 
@@ -113,11 +112,27 @@ def _version_callback(value: bool):
         raise typer.Exit()
 
 
+def _no_color_callback(value: bool):
+    # Mutated on the one shared Console (see console.py), not a fresh
+    # instance — Rich reads .no_color live at render time, so this reaches
+    # every module that already imported it, in whatever order they did.
+    if value:
+        console.no_color = True
+    return value
+
+
 @app.callback(invoke_without_command=True)
 def _main(
     ctx: typer.Context,
     version: bool = typer.Option(
         False, "--version", callback=_version_callback, is_eager=True, help="Show version and exit."
+    ),
+    no_color: bool = typer.Option(
+        False,
+        "--no-color",
+        callback=_no_color_callback,
+        is_eager=True,
+        help="Disable ANSI color. The NO_COLOR env var (https://no-color.org) works too, without this flag.",
     ),
 ):
     """Cerebro root."""

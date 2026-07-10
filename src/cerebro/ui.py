@@ -5,14 +5,12 @@ Visual language deliberately echoes vidforge so the tools feel like a family.
 
 from __future__ import annotations
 
-from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 from rich.tree import Tree
 
+from .console import console
 from .ir import MindMap, Node, NodeType
-
-console = Console()
 
 _BANNER_ART = (
     r"   ______   ______  ____    ______  ____     ____    ____  " + "\n"
