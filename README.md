@@ -42,6 +42,7 @@ topics, sub-points, cross-references, and icons — built by an LLM that
 - [Output formats: OPML vs. XMind](#output-formats-opml-vs-xmind)
 - [Batch: playlists & course folders](#batch-playlists--course-folders)
 - [Local video: embedded subtitles & Whisper](#local-video-embedded-subtitles--whisper)
+- [PDF files](#pdf-files)
 - [Folder structure maps (`cerebro tree`)](#folder-structure-maps-cerebro-tree)
 - [Caching](#caching)
 - [Examples](#examples)
@@ -68,7 +69,7 @@ A few things that make it worth trying:
 - **Actually smart, not just extractive.** Real map → reduce → link pipeline, with an explicit anti-hallucination grounding rule so it doesn't invent facts your source never said.
 - **Free by default.** Works with free-tier [Groq](https://console.groq.com/keys) or [Gemini](https://aistudio.google.com/apikey) keys — no paid API required.
 - **Works fully offline too.** No key at all → falls back to a deterministic heuristic engine. No internet for the *video* → local files, embedded subtitles, and Whisper transcription all work with zero network calls.
-- **Every real source.** Single YouTube videos, whole playlists, local course folders, and local video files — with or without subtitles.
+- **Every real source.** Single YouTube videos, whole playlists, local course folders, local video files (with or without subtitles), and PDF files.
 - **Two honest output formats.** Universal OPML (imports everywhere) or native `.xmind` (keeps relationship arrows and icons that OPML physically can't represent).
 - **Batch-safe.** A 40-video playlist doesn't die because one video is private — failures are reported per-item, never fatal.
 - **Fast.** Concurrent ingestion, concurrent LLM calls, and a content-addressed cache mean re-runs and level upgrades (brief → full → expert) cost almost nothing.
@@ -263,7 +264,7 @@ These come before the subcommand (`cerebro --no-color doctor`, not
 Build a mind map from a single source.
 
 `SOURCE` — a YouTube URL, or a local `.srt` / `.vtt` / `.txt` / `.mp4` /
-`.mkv` / `.mov` / `.webm` / `.avi` / `.m4v` file.
+`.mkv` / `.mov` / `.webm` / `.avi` / `.m4v` / `.pdf` file.
 
 | Flag | Default | Meaning |
 |---|---|---|
@@ -422,6 +423,41 @@ aren't supported — those need OCR, which is out of scope.
 
 Whisper transcriptions are cached, so re-processing the same file (e.g. at a
 different level) never re-transcribes.
+
+## PDF files
+
+```bash
+cerebro map textbook.pdf
+cerebro map textbook.pdf --level expert --format xmind
+```
+
+A PDF is unlike a video transcript: it usually already **has** real structure
+(chapter/section bookmarks, or at least visually distinct headings) instead of
+needing one invented from flat text. cerebro exploits that instead of
+throwing it away — the same judgment call `tree` makes for folders (the
+structure is *known*; AI only *enriches*, it never has to *discover*):
+
+1. **TOC/bookmarks**, if the PDF has them — used directly, exact.
+2. **Font-size heading detection**, if there's no TOC — headings are
+   identified by being notably larger than the document's body text and
+   short; a repeated identical line across many pages (a running header or
+   footer) is filtered out rather than mistaken for real structure. If the
+   signal isn't clearly trustworthy (too few candidates, or everything the
+   same size), cerebro deliberately reports no structure rather than guess.
+3. **No structure found** → falls back to the same map → reduce → link
+   pipeline used for video transcripts, unchanged.
+
+When real structure is found, the heading hierarchy becomes the map's real
+hierarchy — an LLM (if you have a key configured) is only used to extract each
+section's key points and summary, never to invent the outline. `--level brief`
+skips AI entirely even with a key configured (skeleton only, near-instant);
+`full` adds per-section extraction; `expert` additionally detects cross-section
+relationships.
+
+**Not supported:** scanned/image-only PDFs (no text layer — would need OCR),
+tables and images within a PDF (text only), password-protected PDFs, and
+mixing PDFs into `cerebro batch`/course folders (single-file `map` only for
+now).
 
 ## Folder structure maps (`cerebro tree`)
 
