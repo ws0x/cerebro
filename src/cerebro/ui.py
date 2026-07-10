@@ -38,22 +38,47 @@ _TYPE_ICON = {
 }
 
 
+# Width the big wordmark actually needs (art width + panel borders/padding).
+# Below this, Rich would wrap each ASCII-art line mid-character into broken
+# garbage, so a narrow terminal gets a compact fallback banner instead.
+_ART_WIDTH = max(len(line) for line in _BANNER_ART.split("\n"))
+_MIN_FULL_BANNER_WIDTH = _ART_WIDTH + 6
+
+
 def banner() -> Panel:
     from rich.align import Align
-    
+
+    width = console.width
+    if width < _MIN_FULL_BANNER_WIDTH:
+        return _compact_banner()
+
     text = Text()
     lines = _BANNER_ART.split("\n")
     # Apply vertical gradient coloring
     colors = ["cyan", "cyan", "deep_pink3", "bright_magenta", "bright_magenta"]
     for line, color in zip(lines, colors):
         text.append(line + "\n", style=color)
-        
+
     text.append("\n          video → smart mind maps", style="dim white")
-    
+
     aligned = Align.center(text)
     return Panel(
         aligned,
         title="[bold bright_magenta]cerebro[/bold bright_magenta]",
+        subtitle="[dim]whisper + llm[/dim]",
+        border_style="deep_pink3",
+        expand=True,
+    )
+
+
+def _compact_banner() -> Panel:
+    from rich.align import Align
+
+    text = Text()
+    text.append("🧠 cerebro", style="bold bright_magenta")
+    text.append("\nvideo → smart mind maps", style="dim white")
+    return Panel(
+        Align.center(text),
         subtitle="[dim]whisper + llm[/dim]",
         border_style="deep_pink3",
         expand=True,
