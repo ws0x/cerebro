@@ -256,6 +256,7 @@ These come before the subcommand (`cerebro --no-color doctor`, not
 | `--version` | Show version and exit. |
 | `--install-completion` | Install tab-completion for commands and options in your current shell (bash/zsh/fish/PowerShell). Restart your shell afterward. |
 | `--quiet`, `-q` | Suppress the banner and informational status lines (map/batch/tree). Errors, warnings, and the final result still print — this drops decoration, not answers. |
+| `--json` | Print one JSON result object on stdout instead of Rich output (`map`/`batch`/`tree`/`doctor`). Implies `--quiet`, and disables all progress bars/spinners too (Rich's live-redraw only erases cleanly on a real terminal — redirected to a file, it leaves stray text behind). Errors become `{"ok": false, "error": "...", "fix": "..."}` instead of exiting with a red X. |
 
 ### `cerebro map SOURCE [options]`
 

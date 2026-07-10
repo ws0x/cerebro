@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 import time
@@ -31,7 +32,17 @@ from rich.table import Table
 from . import __version__
 from .batch import BatchItem, dry_run_batch, forget_batch_snapshot, list_batch_snapshots, run_batch
 from .cache import Cache
-from .console import console, has_real_console, qprint, quiet_mode, set_ascii, set_high_contrast, set_quiet
+from .console import (
+    console,
+    has_real_console,
+    json_mode,
+    qprint,
+    quiet_mode,
+    set_ascii,
+    set_high_contrast,
+    set_json,
+    set_quiet,
+)
 from .convert import write_opml, write_xmind
 from .doctor import has_failures, run_diagnostics
 from .foldermap import (
@@ -83,10 +94,37 @@ def _spinner(description: str):
     that's what RichProgress is still used directly for elsewhere."""
     with RichProgress(
         SpinnerColumn(), TextColumn("[cyan]{task.description}"), TimeElapsedColumn(),
-        console=console, transient=True,
+        console=console, transient=True, disable=json_mode(),
     ) as progress:
         progress.add_task(description, total=None)
         yield
+
+
+def _error(message: str, fix: str | None = None, code: int = 1):
+    """Report a failure consistently everywhere: a JSON object on stdout
+    under --json, otherwise a red X plus an optional actionable next-step —
+    the same label/detail/fix shape `cerebro doctor` already established,
+    now applied to every command's error paths instead of ad hoc strings.
+    """
+    if json_mode():
+        payload = {"ok": False, "error": message}
+        if fix:
+            payload["fix"] = fix
+        print(json.dumps(payload, ensure_ascii=False))
+    else:
+        console.print(f"[red]✗[/] {message}")
+        if fix:
+            console.print(f"[dim]  → {fix}[/]")
+    raise typer.Exit(code=code)
+
+
+def _emit_result(payload: dict) -> None:
+    """The --json success counterpart to _error — a no-op otherwise. Uses
+    plain print(), not console.print(): Rich's markup parser would try to
+    interpret literal "[" characters in a path or title as style tags and
+    corrupt the JSON, so this deliberately bypasses Rich entirely."""
+    if json_mode():
+        print(json.dumps(payload, ensure_ascii=False))
 
 
 def _structure(transcript, level, provider, cache, relationship_limit=8):
@@ -104,6 +142,7 @@ def _structure(transcript, level, provider, cache, relationship_limit=8):
         TimeElapsedColumn(),
         console=console,
         transient=True,
+        disable=json_mode(),
     ) as progress:
         task = progress.add_task("Thinking…", total=1)
 
@@ -165,6 +204,12 @@ def _quiet_callback(value: bool):
     return value
 
 
+def _json_callback(value: bool):
+    if value:
+        set_json(True)
+    return value
+
+
 @app.callback(invoke_without_command=True)
 def _main(
     ctx: typer.Context,
@@ -199,6 +244,13 @@ def _main(
         callback=_quiet_callback,
         is_eager=True,
         help="Suppress the banner and informational status lines (map/batch/tree). Errors, warnings, and the final result still print — this drops decoration, not answers.",
+    ),
+    as_json: bool = typer.Option(
+        False,
+        "--json",
+        callback=_json_callback,
+        is_eager=True,
+        help="Print one JSON result object on stdout instead of Rich output (map/batch/tree/doctor). Implies --quiet. Errors become a JSON {\"ok\": false, ...} object too.",
     ),
 ):
     """Cerebro root."""
@@ -262,8 +314,7 @@ def _do_map(
         with _spinner("Loading transcript…"):
             transcript = load_transcript(source, whisper_model=whisper_model, cache=cache)
     except Exception as exc:
-        console.print(f"[red]✗ Failed to load transcript: {exc}[/]")
-        raise typer.Exit(code=1)
+        _error(f"Failed to load transcript: {exc}", fix="Check the URL or file path is correct and reachable.")
     qprint(
         f"[green]✓[/] Transcript: [bold]{transcript.title}[/] "
         f"— {transcript.word_count:,} words, {len(transcript.segments):,} segments"
@@ -273,8 +324,7 @@ def _do_map(
     try:
         provider = resolve_provider(engine)
     except ConfigError as exc:
-        console.print(f"[red]✗ {exc}[/]")
-        raise typer.Exit(code=1)
+        _error(str(exc))  # ConfigError's own message already includes the actionable fix
 
     engine_label = "heuristic (offline)" if provider is None else f"{provider.name}:{provider.model}"
     if provider is None and engine == "auto":
@@ -287,7 +337,7 @@ def _do_map(
         + (f", {len(mm.relationships)} relationships" if mm.relationships else "")
     )
 
-    if preview:
+    if preview and not json_mode():
         console.print()
         # A single map is the primary view for its source, so it gets a more
         # generous cap than batch's (4) or tree's (6) — but expert-level
@@ -297,7 +347,21 @@ def _do_map(
         print_preview(mm, max_depth=8)
         console.print()
 
-    _export(mm, fmt, out, level, time.perf_counter() - t0, yes=yes)
+    elapsed = time.perf_counter() - t0
+    written, rel_dropped = _export(mm, fmt, out, level, elapsed, yes=yes)
+    _emit_result({
+        "ok": True,
+        "source": source,
+        "engine": engine_label,
+        "level": level,
+        "format": fmt,
+        "output": str(written),
+        "nodes": mm.node_count(),
+        "depth": mm.depth(),
+        "relationships": len(mm.relationships),
+        "relationships_dropped": rel_dropped,
+        "elapsed_seconds": round(elapsed, 2),
+    })
 
 
 @app.command()
@@ -372,12 +436,16 @@ def _do_batch(
         title = Path(source).name
         transcribe_count = sum(1 for f in files if f.needs_transcription)
     else:
-        console.print(f"[red]✗[/] Not a YouTube playlist URL or an existing folder: {source}")
-        raise typer.Exit(code=1)
+        _error(
+            f"Not a YouTube playlist URL or an existing folder: {source}",
+            fix="Pass a YouTube playlist URL or an existing local folder path.",
+        )
 
     if not items:
-        console.print("[red]✗[/] No videos or lessons found to process.")
-        raise typer.Exit(code=1)
+        _error(
+            "No videos or lessons found to process.",
+            fix="Check the folder actually contains video/subtitle files, or that the playlist has items.",
+        )
 
     total_found = len(items)
     if limit is not None:
@@ -394,18 +462,20 @@ def _do_batch(
 
     if dry_run:
         reused, new = dry_run_batch(items, level, source if not fresh else None)
-        console.print(f"[cyan]Dry run:[/] would reuse [bold]{len(reused)}[/], process [bold]{len(new)}[/] fresh.")
-        if new:
-            console.print("[dim]  New/changed:[/]")
-            for label in new:
-                console.print(f"[dim]    • {label}[/]")
+        if json_mode():
+            _emit_result({"ok": True, "dry_run": True, "source": source, "reused": len(reused), "new": new})
+        else:
+            console.print(f"[cyan]Dry run:[/] would reuse [bold]{len(reused)}[/], process [bold]{len(new)}[/] fresh.")
+            if new:
+                console.print("[dim]  New/changed:[/]")
+                for label in new:
+                    console.print(f"[dim]    • {label}[/]")
         raise typer.Exit()
 
     try:
         provider = resolve_provider(engine)
     except ConfigError as exc:
-        console.print(f"[red]✗ {exc}[/]")
-        raise typer.Exit(code=1)
+        _error(str(exc))
 
     engine_label = "heuristic (offline)" if provider is None else f"{provider.name}:{provider.model}"
     if provider is None and engine == "auto":
@@ -429,6 +499,7 @@ def _do_batch(
         TextColumn("{task.completed}/{task.total}"),
         TimeElapsedColumn(),
         console=console,
+        disable=json_mode(),
     ) as progress:
         task = progress.add_task(f"Processing with {engine_label}", total=len(items))
 
@@ -477,15 +548,37 @@ def _do_batch(
         qprint(
             f"[dim]  ↻ Reused {len(diff.reused)}/{diff.total} item(s) since {since} — {change_desc}.[/]"
         )
-    for label, error in failures:
-        console.print(f"[yellow]![/] {label}: {error}")  # a real per-item failure, not decoration -- always shown
+    if not json_mode():  # folded into items_failed below instead, under --json
+        for label, error in failures:
+            console.print(f"[yellow]![/] {label}: {error}")
 
-    if preview:
+    if preview and not json_mode():
         console.print()
         print_preview(combined, max_depth=4)
         console.print()
 
-    _export(combined, fmt, out, level, time.perf_counter() - t0, yes=yes)
+    elapsed = time.perf_counter() - t0
+    written, rel_dropped = _export(combined, fmt, out, level, elapsed, yes=yes)
+    _emit_result({
+        "ok": True,
+        "source": source,
+        "title": title,
+        "engine": engine_label,
+        "level": level,
+        "format": fmt,
+        "output": str(written),
+        "nodes": combined.node_count(),
+        "depth": combined.depth(),
+        "relationships": len(combined.relationships),
+        "relationships_dropped": rel_dropped,
+        "elapsed_seconds": round(elapsed, 2),
+        "items_total": len(items),
+        "items_ok": ok_count,
+        "items_failed": [{"label": lbl, "error": err} for lbl, err in failures],
+        "reused": len(diff.reused) if diff is not None else None,
+        "added": len(diff.added) if diff is not None else None,
+        "removed": diff.removed if diff is not None else None,
+    })
 
 
 @app.command()
@@ -547,8 +640,7 @@ def _do_tree(
                 incremental=not fresh,
             )
     except ValueError as exc:
-        console.print(f"[red]✗ {exc}[/]")
-        raise typer.Exit(code=1)
+        _error(str(exc))
 
     qprint(f"[green]✓[/] Walked [bold]{path}[/]: {mm.node_count()} nodes, depth {mm.depth()}")
     if diff is not None:
@@ -566,11 +658,14 @@ def _do_tree(
         )
 
     if dry_run:
-        if engine == "heuristic":
+        would_label = len(nodes_needing_labels) if engine != "heuristic" else 0
+        if json_mode():
+            _emit_result({"ok": True, "dry_run": True, "path": path, "would_label": would_label, "engine": engine})
+        elif engine == "heuristic":
             console.print("[cyan]Dry run:[/] heuristic engine — no AI labeling; nothing written.")
         else:
             console.print(
-                f"[cyan]Dry run:[/] would AI-label [bold]{len(nodes_needing_labels)}[/] folder(s) "
+                f"[cyan]Dry run:[/] would AI-label [bold]{would_label}[/] folder(s) "
                 f"with [bold]{engine}[/]; nothing written."
             )
         raise typer.Exit()
@@ -578,8 +673,7 @@ def _do_tree(
     try:
         provider = resolve_provider(engine)
     except ConfigError as exc:
-        console.print(f"[red]✗ {exc}[/]")
-        raise typer.Exit(code=1)
+        _error(str(exc))
 
     if provider is not None:
         if nodes_needing_labels:
@@ -592,6 +686,7 @@ def _do_tree(
                 TimeElapsedColumn(),
                 console=console,
                 transient=True,
+                disable=json_mode(),
             ) as progress:
                 task = progress.add_task("Labeling folders", total=1)
 
@@ -615,12 +710,28 @@ def _do_tree(
     # saving earlier would silently lose every label just assigned.
     finalize_tree_snapshot(pending_snapshot)
 
-    if preview:
+    if preview and not json_mode():
         console.print()
         print_preview(mm, max_depth=6)
         console.print()
 
-    _export(mm, fmt, out, "structure", time.perf_counter() - t0, yes=yes)
+    elapsed = time.perf_counter() - t0
+    written, _rel_dropped = _export(mm, fmt, out, "structure", elapsed, yes=yes)
+    _emit_result({
+        "ok": True,
+        "path": path,
+        "format": fmt,
+        "output": str(written),
+        "nodes": mm.node_count(),
+        "depth": mm.depth(),
+        "elapsed_seconds": round(elapsed, 2),
+        "reused": len(diff.reused) if diff is not None else None,
+        "added": len(diff.added) if diff is not None else None,
+        "changed": len(diff.changed) if diff is not None else None,
+        "deleted": len(diff.deleted) if diff is not None else None,
+        "labeled": len(nodes_needing_labels) if provider is not None else 0,
+        "engine": engine,
+    })
 
 
 @app.command()
@@ -688,6 +799,18 @@ def doctor(
     """
     with _spinner("Running diagnostics…"):
         checks = run_diagnostics(check_network=network)
+
+    if json_mode():
+        _emit_result({
+            "ok": not has_failures(checks),
+            "checks": [
+                {"group": c.group, "label": c.label, "status": c.status, "detail": c.detail, "fix": c.fix}
+                for c in checks
+            ],
+        })
+        if has_failures(checks):
+            raise typer.Exit(code=1)
+        raise typer.Exit()
 
     table = Table(box=None, padding=(0, 1, 0, 0), show_header=False)
     table.add_column(width=2)
@@ -913,13 +1036,17 @@ def forget_batch(
         console.print(f"[dim]No saved history for {source} — nothing to forget.[/]")
 
 
-def _export(mm, fmt: str, out: Path | None, level: str, elapsed: float, yes: bool = False) -> None:
+def _export(mm, fmt: str, out: Path | None, level: str, elapsed: float, yes: bool = False) -> tuple[Path, int]:
+    """Writes the map to disk. Returns ``(written_path, relationships_dropped)``
+    so callers can fold both into a --json result payload instead of relying
+    on this function's own (suppressed, under --json) Rich output."""
     if fmt not in ("opml", "xmind"):
-        console.print(f"[red]✗[/] Unknown format: {fmt} (use opml or xmind)")
-        raise typer.Exit(code=1)
-    if fmt == "opml" and mm.relationships:
+        _error(f"Unknown format: {fmt}", fix="Use opml or xmind.")
+
+    relationships_dropped = len(mm.relationships) if fmt == "opml" and mm.relationships else 0
+    if relationships_dropped and not json_mode():
         console.print(
-            f"[yellow]![/] {len(mm.relationships)} relationship(s) dropped — "
+            f"[yellow]![/] {relationships_dropped} relationship(s) dropped — "
             "OPML can't carry cross-links. Use [bold]--format xmind[/] to keep them."
         )
 
@@ -929,6 +1056,11 @@ def _export(mm, fmt: str, out: Path | None, level: str, elapsed: float, yes: boo
     # re-running the same source without --out resolves to the same default
     # path, so it's just as capable of silently clobbering prior work.
     if out.exists() and not yes:
+        if json_mode():
+            # Confirm.ask would block waiting on stdin, which a script
+            # consuming JSON off stdout has no way to answer — fail clearly
+            # instead of hanging.
+            _error(f"{out} already exists.", fix="Pass --yes to overwrite, or --out a different path.")
         from rich.prompt import Confirm
 
         if not Confirm.ask(f"[yellow]![/] {out} already exists — overwrite?", default=False):
@@ -936,16 +1068,19 @@ def _export(mm, fmt: str, out: Path | None, level: str, elapsed: float, yes: boo
             raise typer.Exit(code=1)
     written = write_opml(mm, out) if fmt == "opml" else write_xmind(mm, out)
 
-    summary = Table.grid(padding=(0, 2))
-    summary.add_row("[dim]Output[/]", f"[bold]{written}[/]")
-    summary.add_row("[dim]Format[/]", fmt.upper())
-    summary.add_row("[dim]Level[/]", level)
-    summary.add_row("[dim]Time[/]", f"{elapsed:.2f}s")
-    console.print(Panel(summary, title="[green]Done[/]", border_style="green", expand=False))
-    if fmt == "opml":
-        qprint(f"[dim]Import into XMind: File → Import → OPML → {written.name}[/]")
-    else:
-        qprint(f"[dim]Open directly in XMind: {written.name}[/]")
+    if not json_mode():
+        summary = Table.grid(padding=(0, 2))
+        summary.add_row("[dim]Output[/]", f"[bold]{written}[/]")
+        summary.add_row("[dim]Format[/]", fmt.upper())
+        summary.add_row("[dim]Level[/]", level)
+        summary.add_row("[dim]Time[/]", f"{elapsed:.2f}s")
+        console.print(Panel(summary, title="[green]Done[/]", border_style="green", expand=False))
+        if fmt == "opml":
+            qprint(f"[dim]Import into XMind: File → Import → OPML → {written.name}[/]")
+        else:
+            qprint(f"[dim]Open directly in XMind: {written.name}[/]")
+
+    return written, relationships_dropped
 
 
 def run() -> None:

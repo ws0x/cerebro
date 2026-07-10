@@ -88,6 +88,25 @@ def test_quiet_mode_toggle():
         console_module.set_quiet(False)
 
 
+def test_json_mode_toggle():
+    assert console_module.json_mode() is False
+    console_module.set_json(True)
+    try:
+        assert console_module.json_mode() is True
+    finally:
+        console_module.set_json(False)
+        console_module.set_quiet(False)
+
+
+def test_json_mode_implies_quiet_mode():
+    console_module.set_json(True)
+    try:
+        assert console_module.quiet_mode() is True
+    finally:
+        console_module.set_json(False)
+        console_module.set_quiet(False)
+
+
 def test_high_contrast_theme_overrides_dim_to_bold(monkeypatch):
     buf = StringIO()
     c = Console(file=buf, force_terminal=True)

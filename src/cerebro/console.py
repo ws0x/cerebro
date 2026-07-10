@@ -31,6 +31,7 @@ _HIGH_CONTRAST_THEME = Theme({"dim": "bold", "deep_pink3": "bold", "bright_magen
 
 _ascii_mode = False
 _quiet_mode = False
+_json_mode = False
 
 
 def set_high_contrast(enabled: bool) -> None:
@@ -54,6 +55,17 @@ def set_quiet(enabled: bool) -> None:
 
 def quiet_mode() -> bool:
     return _quiet_mode
+
+
+def set_json(enabled: bool) -> None:
+    global _json_mode
+    _json_mode = enabled
+    if enabled:
+        set_quiet(True)  # a script parsing JSON off stdout can't also skip past banner/status noise
+
+
+def json_mode() -> bool:
+    return _json_mode
 
 
 def qprint(*args, **kwargs) -> None:
