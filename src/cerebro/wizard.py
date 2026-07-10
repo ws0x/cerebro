@@ -31,7 +31,7 @@ from rich.table import Table
 from .console import console
 from .ingest import looks_like_youtube
 from .ingest.playlist import is_playlist_url
-from .paths import ensure_output_dir, load_config
+from .paths import ensure_output_dir, load_config, save_config
 
 # Matches Rich's cyan accent used everywhere else in the CLI, so the arrow-key
 # menus don't feel like a different tool bolted on.
@@ -68,9 +68,20 @@ def _has_real_console() -> bool:
         return False
 
 
+# Printed right before each individual prompt, not once at the wizard's
+# start — a hint that scrolled off-screen three steps ago doesn't help
+# anyone. The two variants match what's actually available in each backend:
+# arrow-key navigation only applies to the real questionary path, and the
+# Rich fallback's choices are already spelled out as literal values.
+_HINT_TEXT = "[dim]Enter to confirm · Ctrl+C to cancel[/]"
+_HINT_SELECT = "[dim]↑↓ navigate · Enter select · Ctrl+C cancel[/]"
+_HINT_FALLBACK = "[dim]Ctrl+C to cancel[/]"
+
+
 def _ask_text(message: str, default: str | None = None) -> str:
     if _has_real_console():
         try:
+            console.print(_HINT_TEXT)
             result = questionary.text(message, default=default or "", style=_QSTYLE).ask()
             if result is None:
                 _cancel()
@@ -79,6 +90,7 @@ def _ask_text(message: str, default: str | None = None) -> str:
             raise
         except Exception:
             pass  # fall through to the Rich prompt below
+    console.print(_HINT_FALLBACK)
     kwargs = {"default": default} if default is not None else {}
     return _clean(Prompt.ask(f"[cyan]{message.rstrip(':')}[/]", **kwargs))
 
@@ -86,6 +98,7 @@ def _ask_text(message: str, default: str | None = None) -> str:
 def _select(message: str, choices: list[Choice], default: str | None = None) -> str:
     if _has_real_console():
         try:
+            console.print(_HINT_SELECT)
             result = questionary.select(message, choices=choices, default=default, style=_QSTYLE).ask()
             if result is None:
                 _cancel()
@@ -95,6 +108,7 @@ def _select(message: str, choices: list[Choice], default: str | None = None) -> 
         except Exception:
             pass  # fall through to the Rich prompt below
 
+    console.print(_HINT_FALLBACK)
     console.print(f"[cyan]{message.rstrip(':')}[/]")
     values = [c.value for c in choices]
     for c in choices:
@@ -178,6 +192,20 @@ def _ask_output(fmt: str) -> Path:
     return Path(_ask_text("Output path:", default=default))
 
 
+def _remember_last_answers(level: str, engine: str, fmt: str) -> None:
+    """Persist the confirmed choices as the new defaults, so the next wizard
+    run (and the next bare `map`/`batch`/`tree` invocation, which read the
+    same config) starts from where this one left off instead of always
+    resetting to full/auto/opml. Best-effort — a write failure here shouldn't
+    block the build the user actually asked for."""
+    try:
+        config = load_config()
+        config.update({"level": level, "engine": engine, "format": fmt})
+        save_config(config)
+    except Exception:
+        pass
+
+
 def _summary_panel(source, kind, level, engine, fmt, out) -> Panel:
     table = Table.grid(padding=(0, 2))
     table.add_row("[dim]Source[/]", source)
@@ -199,7 +227,6 @@ def run_wizard(
     cfg_format = str(config.get("format") or ("xmind" if cfg_level == "expert" else "opml"))
 
     console.print(Rule("[bold cyan]Source[/]", style="cyan"))
-    console.print("[dim]Ctrl+C to cancel anytime[/]\n")
     source, kind = _ask_source()
 
     console.print()
@@ -251,6 +278,7 @@ def run_wizard(
             out = _ask_output(fmt)
 
     console.print()
+    _remember_last_answers(level, engine, fmt)
     if kind in ("playlist", "folder"):
         do_batch(
             source,
