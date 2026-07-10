@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "cerebro"
 version = "0.1.0"
-description = "Turn video and PDF content into XMind-compatible smart mind maps."
+description = "Turn video, audio, and PDF content into XMind-compatible smart mind maps."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }

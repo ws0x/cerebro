@@ -179,14 +179,14 @@ def _select(message: str, choices: list[Choice], default: str | None = None, all
 # source prompt could actually reach.
 _MODE_CHOICES = [
     Choice("YouTube video or playlist", value="youtube"),
-    Choice("Local video — single file or a folder of lessons", value="local_video"),
+    Choice("Local video or audio — single file or a folder of lessons", value="local_video"),
     Choice("PDF file", value="pdf"),
     Choice("Folder structure — map how it's organized, not its contents (cerebro tree)", value="tree"),
 ]
 
 _MODE_LABEL = {
     "youtube": "YouTube video or playlist",
-    "local_video": "local video",
+    "local_video": "local video/audio",
     "pdf": "PDF file",
     "tree": "folder structure",
 }
@@ -295,7 +295,7 @@ def _ask_source_for_mode(mode: str, default: str = "") -> str:
             return result
 
         # local_video
-        result = _ask_path("Path to a video file or a folder of lessons:", default=default, allow_back=True)
+        result = _ask_path("Path to a video/audio file or a folder of lessons:", default=default, allow_back=True)
         if result is _BACK:
             return _BACK
         path = Path(result)

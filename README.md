@@ -2,12 +2,13 @@
 
 # cerebro
 
-**Turn video and PDFs into structured knowledge — not just a summary.**
+**Turn video, audio, and PDFs into structured knowledge — not just a summary.**
 
 Point it at a YouTube video, a whole playlist, a course folder, a local video
-file, or a PDF. Get back a hierarchical, XMind-compatible mind map with real
-structure: topics, sub-points, cross-references, and icons — built by an LLM
-that *understands* the content, not a transcript-slicer that pretends to.
+or audio file, or a PDF. Get back a hierarchical, XMind-compatible mind map
+with real structure: topics, sub-points, cross-references, and icons — built
+by an LLM that *understands* the content, not a transcript-slicer that
+pretends to.
 
 [![CI](https://github.com/ws0x/cerebro/actions/workflows/ci.yml/badge.svg)](https://github.com/ws0x/cerebro/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](#license)
@@ -41,7 +42,7 @@ that *understands* the content, not a transcript-slicer that pretends to.
 - [Choosing an engine](#choosing-an-engine)
 - [Output formats: OPML vs. XMind](#output-formats-opml-vs-xmind)
 - [Batch: playlists & course folders](#batch-playlists--course-folders)
-- [Local video: embedded subtitles & Whisper](#local-video-embedded-subtitles--whisper)
+- [Local video & audio: embedded subtitles & Whisper](#local-video--audio-embedded-subtitles--whisper)
 - [PDF files](#pdf-files)
 - [Folder structure maps (`cerebro tree`)](#folder-structure-maps-cerebro-tree)
 - [Caching](#caching)
@@ -69,7 +70,7 @@ A few things that make it worth trying:
 - **Actually smart, not just extractive.** Real map → reduce → link pipeline, with an explicit anti-hallucination grounding rule so it doesn't invent facts your source never said.
 - **Free by default.** Works with free-tier [Groq](https://console.groq.com/keys) or [Gemini](https://aistudio.google.com/apikey) keys — no paid API required.
 - **Works fully offline too.** No key at all → falls back to a deterministic heuristic engine. No internet for the *video* → local files, embedded subtitles, and Whisper transcription all work with zero network calls.
-- **Every real source.** Single YouTube videos, whole playlists, local course folders, local video files (with or without subtitles), and PDF files.
+- **Every real source.** Single YouTube videos, whole playlists, local course folders, local video/audio files (with or without subtitles), and PDF files.
 - **Two honest output formats.** Universal OPML (imports everywhere) or native `.xmind` (keeps relationship arrows and icons that OPML physically can't represent).
 - **Batch-safe.** A 40-video playlist doesn't die because one video is private — failures are reported per-item, never fatal.
 - **Fast.** Concurrent ingestion, concurrent LLM calls, and a content-addressed cache mean re-runs and level upgrades (brief → full → expert) cost almost nothing.
@@ -77,7 +78,7 @@ A few things that make it worth trying:
 ## Requirements
 
 - **Python 3.10+** (only if installing via pip/pipx — the standalone binary needs nothing)
-- **[ffmpeg](https://ffmpeg.org/download.html)** on your `PATH` — required for local video files (embedded subtitle extraction and audio extraction for Whisper)
+- **[ffmpeg](https://ffmpeg.org/download.html)** on your `PATH` — required for local video/audio files (embedded subtitle extraction and audio normalization for Whisper)
 - A free **[Groq](https://console.groq.com/keys)** or **[Gemini](https://aistudio.google.com/apikey)** API key for smart structuring (optional — cerebro works without one, just less "smart")
 
 ## Installation
@@ -290,7 +291,8 @@ These come before the subcommand (`cerebro --no-color doctor`, not
 Build a mind map from a single source.
 
 `SOURCE` — a YouTube URL, or a local `.srt` / `.vtt` / `.txt` / `.mp4` /
-`.mkv` / `.mov` / `.webm` / `.avi` / `.m4v` / `.pdf` file.
+`.mkv` / `.mov` / `.webm` / `.avi` / `.m4v` / `.mp3` / `.wav` / `.m4a` /
+`.flac` / `.ogg` / `.aac` / `.pdf` file.
 
 | Flag | Default | Meaning |
 |---|---|---|
@@ -452,13 +454,14 @@ cerebro batch ./my_course_folder --format xmind
 - **YouTube playlists** are listed without downloading anything (fast, via
   `yt-dlp`'s flat extraction), then every video is ingested and structured
   concurrently.
-- **Course folders** match each video file to a same-named subtitle file
-  (`lesson1.mp4` + `lesson1.srt`) when present. Videos with no sidecar
-  subtitle aren't skipped — they're processed via embedded-subtitle
-  extraction or Whisper, cerebro just tells you up front that those will be
-  slower. PDFs in the same folder need no pairing — each is included as its
-  own lesson and keeps its own real structure (see [PDF files](#pdf-files)),
-  not flattened into the others.
+- **Course folders** match each video or audio file to a same-named subtitle
+  file (`lesson1.mp4` + `lesson1.srt`, or `episode3.mp3` + `episode3.srt`)
+  when present. Files with no sidecar subtitle aren't skipped — they're
+  processed via embedded-subtitle extraction (video) or Whisper (video or
+  audio), cerebro just tells you up front that those will be slower. PDFs in
+  the same folder need no pairing — each is included as its own lesson and
+  keeps its own real structure (see [PDF files](#pdf-files)), not flattened
+  into the others.
 - **Files/lessons are numbered-sort aware** — "Lesson 2" sorts before "Lesson
   10", not after.
 - **One bad item never kills the batch.** A private video, a missing
@@ -484,7 +487,7 @@ error) is never treated as "reused" — it wasn't successfully cached, so it's
 retried fresh, same as a genuinely new item. Pass `--fresh` to ignore history
 and reprocess everything regardless.
 
-## Local video: embedded subtitles & Whisper
+## Local video & audio: embedded subtitles & Whisper
 
 Point `map` or `batch` straight at a `.mp4`/`.mkv`/`.mov`/`.webm`/`.avi`/`.m4v`
 file — no manual subtitle extraction needed. cerebro tries, in order:
@@ -496,6 +499,13 @@ file — no manual subtitle extraction needed. cerebro tries, in order:
 
 Image-based subtitle formats (PGS/VobSub, common in some ripped `.mkv` files)
 aren't supported — those need OCR, which is out of scope.
+
+**Bare audio files** (`.mp3`/`.wav`/`.m4a`/`.flac`/`.ogg`/`.aac` — podcasts,
+voice memos, lecture recordings with no video at all) go straight to step 2
+above; there's no subtitle track to look for on an audio-only file, so it's
+Whisper or nothing. A same-named sidecar transcript (`episode3.mp3` +
+`episode3.srt`) is still used instead, exactly like video's sidecar-subtitle
+shortcut, if you happen to have one.
 
 Whisper transcriptions are cached, so re-processing the same file (e.g. at a
 different level) never re-transcribes.
@@ -690,8 +700,8 @@ reference for what output quality to expect at each level.
 ## Troubleshooting
 
 **`ffmpeg not found on PATH`** — install ffmpeg and make sure it's on your
-`PATH`. Only needed for local video files; YouTube and subtitle-file sources
-don't need it.
+`PATH`. Only needed for local video/audio files; YouTube and subtitle-file
+sources don't need it.
 
 **`GROQ_API_KEY not set` / `GEMINI_API_KEY not set`** — you asked for a
 specific engine (`--engine groq`) but didn't set that key. Either add it to

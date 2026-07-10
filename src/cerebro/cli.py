@@ -76,7 +76,7 @@ _EPILOG = (
 
 app = typer.Typer(
     add_completion=True,
-    help="Turn video and PDF content into XMind-compatible smart mind maps. Run with no arguments for a guided wizard.",
+    help="Turn video, audio, and PDF content into XMind-compatible smart mind maps. Run with no arguments for a guided wizard.",
     epilog=_EPILOG,
 )
 
@@ -322,7 +322,7 @@ def _main(
 @app.command()
 def map(
     source: str = typer.Argument(
-        ..., help="YouTube URL or local .srt/.vtt/.txt/.mp4/.mkv/.mov/.webm/.avi/.m4v/.pdf file."
+        ..., help="YouTube URL or local .srt/.vtt/.txt/.mp4/.mkv/.mov/.webm/.avi/.m4v/.mp3/.wav/.m4a/.flac/.ogg/.aac/.pdf file."
     ),
     level: str = typer.Option(None, "--level", "-l", help="How much structure to extract: brief | full | expert (default: full, or your saved config — see cerebro config)"),
     fmt: str = typer.Option(None, "--format", "-f", help="Output file format: opml | xmind (default: opml, or your saved config)"),
