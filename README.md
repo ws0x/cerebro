@@ -508,6 +508,20 @@ or a second engine's key is reported as an advisory (`!`), not a failure;
 `cerebro doctor` only exits non-zero on a hard failure (an unsupported
 Python version, a missing core dependency, an unwritable storage path).
 
+## Full-page dashboard (`cerebro dashboard`)
+
+```bash
+cerebro dashboard
+```
+
+Takes over the whole terminal viewport — the alternate screen buffer, the
+same mechanism `less`/`git diff`/`htop` use — instead of scrolling more
+text into your history. One screen: setup health (only what needs
+attention) side by side with everything cerebro remembers (cache +
+snapshots). `Enter` refreshes, `q` quits, and your previous terminal
+content is restored on exit. Falls back to a single static render when
+there's no real attached terminal (piped output, CI).
+
 ## Checking what cerebro remembers (`cerebro status`)
 
 ```bash

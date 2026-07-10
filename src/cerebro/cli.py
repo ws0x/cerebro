@@ -60,13 +60,13 @@ from .llm.config import ConfigError, load_env, read_env_file, resolve_provider, 
 from .paths import CONFIG_DIR, GLOBAL_ENV_PATH, ensure_output_dir, load_config, save_config
 from .structure import HeuristicStructurer
 from .structure.llm import LLMStructurer, link_relationships
-from .ui import print_banner, print_preview
+from .ui import banner, print_banner, print_preview
 from .wizard import run_wizard
 
 _EPILOG = (
     'Examples: cerebro (wizard)  |  cerebro map "URL" -l expert  |  '
     'cerebro batch "playlist URL" --limit 10  |  cerebro batch ./course_folder --format xmind  |  '
-    "cerebro tree ./my_project --engine groq  |  cerebro doctor"
+    "cerebro tree ./my_project --engine groq  |  cerebro doctor  |  cerebro dashboard"
 )
 
 app = typer.Typer(
@@ -256,7 +256,10 @@ def _main(
     """Cerebro root."""
     if _HELP_REQUESTED:
         return  # a --help lookup is a reference check, not a real run
-    if not quiet_mode():
+    # dashboard renders its own banner as the header of its full-page layout —
+    # printing this one first would either flash-and-vanish once the
+    # alternate screen buffer takes over, or (no real terminal) duplicate it.
+    if not quiet_mode() and ctx.invoked_subcommand != "dashboard":
         print_banner()
     load_env()
     if ctx.invoked_subcommand is None:
@@ -886,6 +889,79 @@ def status():
 
     if not tree_snaps and not batch_snaps:
         console.print("[dim]No incremental history yet — run `cerebro tree` or `cerebro batch` to build some.[/]")
+
+
+def _dashboard_layout():
+    from rich.layout import Layout
+
+    checks = run_diagnostics(check_network=False)
+    ok = sum(1 for c in checks if c.status == "ok")
+    warn = sum(1 for c in checks if c.status == "warn")
+    fail = sum(1 for c in checks if c.status == "fail")
+    health = Table.grid(padding=(0, 1))
+    for c in checks:
+        if c.status == "ok":
+            continue  # only the things that need a look, so this stays scannable at a glance
+        icon, color = _STATUS_STYLE[c.status]
+        health.add_row(icon, f"[{color}]{c.label}:[/] {c.detail}")
+    if fail == 0 and warn == 0:
+        health.add_row("[green]✓[/]", "[green]Everything looks good.[/]")
+    health_panel = Panel(
+        health,
+        title=f"[cyan]Setup[/] — {ok} ok, {warn} advisory, {fail} failing",
+        border_style="cyan",
+        subtitle="[dim]cerebro doctor for the full picture[/]",
+    )
+
+    cache = Cache()
+    count, total_bytes = cache.stats()
+    tree_snaps = list_tree_snapshots()
+    batch_snaps = list_batch_snapshots()
+    mem = Table.grid(padding=(0, 2))
+    mem.add_row("[dim]Response cache[/]", f"{count} entries, {_human_size(total_bytes)}")
+    mem.add_row("[dim]Tree snapshots[/]", f"{len(tree_snaps)} folder(s) mapped")
+    mem.add_row("[dim]Batch snapshots[/]", f"{len(batch_snaps)} playlist/course(s) run")
+    memory_panel = Panel(
+        mem, title="[cyan]Remembered[/]", border_style="cyan", subtitle="[dim]cerebro status for details[/]"
+    )
+
+    layout = Layout()
+    layout.split_column(
+        Layout(banner(), name="header", size=9),
+        Layout(name="body"),
+        Layout(
+            Panel("[dim]Enter to refresh · q + Enter to quit[/]", border_style="dim"), name="footer", size=3
+        ),
+    )
+    layout["body"].split_row(Layout(health_panel, name="health"), Layout(memory_panel, name="memory"))
+    return layout
+
+
+@app.command()
+def dashboard():
+    """Full-page live overview: setup health + everything cerebro remembers.
+
+    Takes over the whole terminal viewport (the alternate screen buffer —
+    the same mechanism `less`/`git diff`/`htop` use) and restores your
+    previous terminal content on exit, instead of scrolling more text into
+    your history. Enter refreshes; 'q' quits.
+
+    Falls back to a single static render when there's no real attached
+    terminal to take over (piped output, CI) rather than switching screens
+    or blocking on input that will never come.
+    """
+    if not has_real_console():
+        console.print(_dashboard_layout())
+        return
+
+    from rich.prompt import Prompt
+
+    with console.screen() as screen:
+        while True:
+            screen.update(_dashboard_layout())
+            answer = Prompt.ask("", console=console, default="", show_default=False)
+            if answer.strip().lower() in ("q", "quit", "exit"):
+                break
 
 
 @app.command()
