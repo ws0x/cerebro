@@ -5,10 +5,10 @@
 **Turn video, audio, and PDFs into structured knowledge — not just a summary.**
 
 Point it at a YouTube video, a whole playlist, a course folder, a local video
-or audio file, or a PDF. Get back a hierarchical, XMind-compatible mind map
-with real structure: topics, sub-points, cross-references, and icons — built
-by an LLM that *understands* the content, not a transcript-slicer that
-pretends to.
+or audio file, or a PDF. Get back a hierarchical mind map — OPML, native
+XMind, or Markdown — with real structure: topics, sub-points,
+cross-references, and icons — built by an LLM that *understands* the
+content, not a transcript-slicer that pretends to.
 
 [![CI](https://github.com/ws0x/cerebro/actions/workflows/ci.yml/badge.svg)](https://github.com/ws0x/cerebro/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](#license)
@@ -40,7 +40,7 @@ pretends to.
 - [Command reference](#command-reference)
 - [Processing levels](#processing-levels)
 - [Choosing an engine](#choosing-an-engine)
-- [Output formats: OPML vs. XMind](#output-formats-opml-vs-xmind)
+- [Output formats: OPML vs. XMind vs. Markdown](#output-formats-opml-vs-xmind-vs-markdown)
 - [Batch: playlists & course folders](#batch-playlists--course-folders)
 - [Local video & audio: embedded subtitles & Whisper](#local-video--audio-embedded-subtitles--whisper)
 - [PDF files](#pdf-files)
@@ -71,7 +71,7 @@ A few things that make it worth trying:
 - **Free by default.** Works with free-tier [Groq](https://console.groq.com/keys) or [Gemini](https://aistudio.google.com/apikey) keys — no paid API required.
 - **Works fully offline too.** No key at all → falls back to a deterministic heuristic engine. No internet for the *video* → local files, embedded subtitles, and Whisper transcription all work with zero network calls.
 - **Every real source.** Single YouTube videos, whole playlists, local course folders, local video/audio files (with or without subtitles), and PDF files.
-- **Two honest output formats.** Universal OPML (imports everywhere) or native `.xmind` (keeps relationship arrows and icons that OPML physically can't represent).
+- **Three honest output formats.** Universal OPML (imports everywhere), native `.xmind` (keeps relationship arrows and icons OPML physically can't represent), or Markdown (for Obsidian/Notion/plain outliners — the one XMind never reaches).
 - **Batch-safe.** A 40-video playlist doesn't die because one video is private — failures are reported per-item, never fatal.
 - **Fast.** Concurrent ingestion, concurrent LLM calls, and a content-addressed cache mean re-runs and level upgrades (brief → full → expert) cost almost nothing.
 
@@ -428,21 +428,26 @@ If a live call fails mid-run — bad key, rate limit, network blip — cerebro
 **automatically falls back to the heuristic engine** rather than crashing, so
 a run never just dies.
 
-## Output formats: OPML vs. XMind
+## Output formats: OPML vs. XMind vs. Markdown
 
-| | OPML | Native `.xmind` |
-|---|---|---|
-| Hierarchy & content | ✅ full fidelity | ✅ full fidelity |
-| Notes & timestamps | ✅ | ✅ |
-| Markers / icons (🔑 💡 ⚠️ ✅ ✨) | ❌ | ✅ |
-| Relationship arrows (`expert` level) | ❌ | ✅ |
-| Opens in | XMind, Freemind, MindNode, Workflowy, most outliners | XMind only (native) |
-| Import step | `File → Import → OPML` | Just double-click |
+| | OPML | Native `.xmind` | Markdown |
+|---|---|---|---|
+| Hierarchy & content | ✅ full fidelity | ✅ full fidelity | ✅ full fidelity |
+| Notes & timestamps | ✅ | ✅ | ✅ |
+| Markers / icons (🔑 💡 ⚠️ ✅ ✨) | ❌ | ✅ | ❌ |
+| Relationship arrows (`expert` level) | ❌ | ✅ | ✅ *(as a plain "Relationships" section, not inline arrows)* |
+| Opens in | XMind, Freemind, MindNode, Workflowy, most outliners | XMind only (native) | Obsidian, Notion, any plain-text/markdown editor |
+| Import step | `File → Import → OPML` | Just double-click | Just open the file |
 
 **Rule of thumb:** use `opml` for `brief`/`full` maps or if you want maximum
-compatibility; use `xmind` for `expert` maps so you don't lose the
-relationships and icons the model worked out. cerebro warns you if you export
-an `expert` map as OPML and would be dropping relationships.
+outliner compatibility; use `xmind` for `expert` maps in XMind itself, so you
+don't lose the relationships and icons the model worked out; use `md` if you
+live in Obsidian/Notion/plain markdown instead of an outliner app — it's the
+only format of the three that reaches that audience at all, and it still
+keeps `expert`-level relationships (just as a readable list, not visual
+arrows, since a single markdown file has nowhere to draw one). cerebro warns
+you if you export an `expert` map as OPML and would be dropping relationships
+entirely — the only one of the three formats that actually loses them.
 
 ## Batch: playlists & course folders
 

@@ -43,7 +43,7 @@ from .console import (
     set_json,
     set_quiet,
 )
-from .convert import write_opml, write_xmind
+from .convert import write_markdown, write_opml, write_xmind
 from .doctor import has_failures, run_diagnostics
 from .foldermap import (
     build_folder_map,
@@ -325,7 +325,7 @@ def map(
         ..., help="YouTube URL or local .srt/.vtt/.txt/.mp4/.mkv/.mov/.webm/.avi/.m4v/.mp3/.wav/.m4a/.flac/.ogg/.aac/.pdf file."
     ),
     level: str = typer.Option(None, "--level", "-l", help="How much structure to extract: brief | full | expert (default: full, or your saved config — see cerebro config)"),
-    fmt: str = typer.Option(None, "--format", "-f", help="Output file format: opml | xmind (default: opml, or your saved config)"),
+    fmt: str = typer.Option(None, "--format", "-f", help="Output file format: opml | xmind | md (default: opml, or your saved config)"),
     out: Path = typer.Option(None, "--out", "-o", help="Output file path."),
     engine: str = typer.Option(None, "--engine", "-e", help="Which engine structures the content: auto | groq | gemini | heuristic (default: auto, or your saved config)"),
     no_cache: bool = typer.Option(False, "--no-cache", help="Disable the LLM response cache."),
@@ -442,7 +442,7 @@ def _do_map(
 def batch(
     source: str = typer.Argument(..., help="YouTube playlist URL or local course-folder path."),
     level: str = typer.Option(None, "--level", "-l", help="How much structure to extract: brief | full | expert (default: full, or your saved config — see cerebro config)"),
-    fmt: str = typer.Option(None, "--format", "-f", help="Output file format: opml | xmind (default: opml, or your saved config)"),
+    fmt: str = typer.Option(None, "--format", "-f", help="Output file format: opml | xmind | md (default: opml, or your saved config)"),
     out: Path = typer.Option(None, "--out", "-o", help="Output file path."),
     engine: str = typer.Option(None, "--engine", "-e", help="Which engine structures the content: auto | groq | gemini | heuristic (default: auto, or your saved config)"),
     workers: int = typer.Option(3, "--workers", "-w", help="Videos/lessons processed concurrently."),
@@ -662,7 +662,7 @@ def _do_batch(
 @app.command()
 def tree(
     path: str = typer.Argument(..., help="Local folder to map (not a video/course folder)."),
-    fmt: str = typer.Option(None, "--format", "-f", help="Output file format: opml | xmind (default: opml, or your saved config)"),
+    fmt: str = typer.Option(None, "--format", "-f", help="Output file format: opml | xmind | md (default: opml, or your saved config)"),
     out: Path = typer.Option(None, "--out", "-o", help="Output file path."),
     engine: str = typer.Option(
         None, "--engine", "-e", help="heuristic (default, free/instant) | groq | gemini — AI-labels folder purposes"
@@ -1024,7 +1024,7 @@ def search(
 def merge(
     files: list[Path] = typer.Argument(..., help="Two or more already-built .opml/.xmind files to combine."),
     title: str = typer.Option("Merged Map", "--title", help="Title for the combined map's root."),
-    fmt: str = typer.Option(None, "--format", "-f", help="Output format: opml | xmind (default: xmind if any input carries relationships, else opml)."),
+    fmt: str = typer.Option(None, "--format", "-f", help="Output format: opml | xmind | md (default: xmind if any input carries relationships, else opml)."),
     out: Path = typer.Option(None, "--out", "-o", help="Output file path."),
     preview: bool = typer.Option(True, "--preview/--no-preview", help="Show the combined map in-terminal."),
     yes: bool = typer.Option(False, "--yes", "-y", help="Overwrite an existing output file without asking."),
@@ -1173,7 +1173,7 @@ app.add_typer(config_app, name="config")
 # used by both `config set`'s validation and `config list`'s fallback display.
 _CONFIG_KEYS: dict[str, tuple[tuple[str, ...] | None, str]] = {
     "level": (("brief", "full", "expert"), "full"),
-    "format": (("opml", "xmind"), "opml"),
+    "format": (("opml", "xmind", "md"), "opml"),
     "engine": (("auto", "groq", "gemini", "heuristic"), "auto"),
     "whisper_model": (("tiny", "base", "small", "medium", "large-v2", "large-v3"), "base"),
     "relationship_limit": (None, "8"),
@@ -1307,14 +1307,14 @@ def _export(mm, fmt: str, out: Path | None, level: str, elapsed: float, yes: boo
     """Writes the map to disk. Returns ``(written_path, relationships_dropped)``
     so callers can fold both into a --json result payload instead of relying
     on this function's own (suppressed, under --json) Rich output."""
-    if fmt not in ("opml", "xmind"):
-        _error(f"Unknown format: {fmt}", fix="Use opml or xmind.")
+    if fmt not in ("opml", "xmind", "md"):
+        _error(f"Unknown format: {fmt}", fix="Use opml, xmind, or md.")
 
     relationships_dropped = len(mm.relationships) if fmt == "opml" and mm.relationships else 0
     if relationships_dropped and not json_mode():
         console.print(
             f"[yellow]![/] {relationships_dropped} relationship(s) dropped — "
-            "OPML can't carry cross-links. Use [bold]--format xmind[/] to keep them."
+            "OPML can't carry cross-links. Use [bold]--format xmind[/] or [bold]md[/] to keep them."
         )
 
     if out is None:
@@ -1368,7 +1368,12 @@ def _export(mm, fmt: str, out: Path | None, level: str, elapsed: float, yes: boo
                 raise typer.Exit(code=1)
             new_path = Prompt.ask("  New output path", default=str(out.with_stem(out.stem + "_2")))
             out = Path(new_path)
-    written = write_opml(mm, out) if fmt == "opml" else write_xmind(mm, out)
+    if fmt == "opml":
+        written = write_opml(mm, out)
+    elif fmt == "xmind":
+        written = write_xmind(mm, out)
+    else:
+        written = write_markdown(mm, out)
 
     if not json_mode():
         summary = Table.grid(padding=(0, 2))
@@ -1379,8 +1384,10 @@ def _export(mm, fmt: str, out: Path | None, level: str, elapsed: float, yes: boo
         console.print(Panel(summary, title="[green]Done[/]", border_style="green", expand=False))
         if fmt == "opml":
             qprint(f"[dim]Import into XMind: File → Import → OPML → {written.name}[/]")
-        else:
+        elif fmt == "xmind":
             qprint(f"[dim]Open directly in XMind: {written.name}[/]")
+        else:
+            qprint(f"[dim]Open {written.name} in Obsidian, or any markdown editor.[/]")
 
     return written, relationships_dropped
 

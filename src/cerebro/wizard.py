@@ -323,9 +323,9 @@ def _ask_format(level: str, default: str | None = None, allow_back: bool = False
     if default is None:
         default = "xmind" if level == "expert" else "opml"
     hint = (
-        "expert level has relationships — xmind keeps them, opml would drop them"
+        "expert level has relationships — xmind and md keep them, opml would drop them"
         if level == "expert"
-        else "opml imports everywhere; xmind is native and keeps icons"
+        else "opml imports everywhere; xmind is native and keeps icons; md is for Obsidian/plain outliners"
     )
     console.print(f"[dim]  {hint}[/]")
     return _select(
@@ -333,6 +333,7 @@ def _ask_format(level: str, default: str | None = None, allow_back: bool = False
         [
             Choice("OPML — imports into XMind, Freemind, most outliners", value="opml"),
             Choice("XMind — native file, keeps relationships & markers", value="xmind"),
+            Choice("Markdown — nested bullets, for Obsidian/Notion/plain outliners", value="md"),
         ],
         default=default,
         allow_back=allow_back,
