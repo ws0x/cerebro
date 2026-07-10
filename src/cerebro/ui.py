@@ -89,12 +89,20 @@ def print_banner() -> None:
     console.print(banner())
 
 
+_NOTE_PREVIEW_LEN = 50
+
+
 def _attach(tree: Tree, node: Node, max_depth: int | None, depth: int = 1) -> None:
     for child in node.children:
         icon = _TYPE_ICON.get(child.type, "•")
         label = Text(f"{icon} {child.title}")
         if child.type == NodeType.detail:
             label.stylize("dim")
+        if child.note:
+            note = child.note.strip()
+            if len(note) > _NOTE_PREVIEW_LEN:
+                note = note[:_NOTE_PREVIEW_LEN].rsplit(" ", 1)[0] + "…"
+            label.append(f"  — {note}", style="dim italic")
         if max_depth is not None and depth >= max_depth and child.children:
             label.append(f"  (+{child.count() - 1} more)", style="dim italic")
             tree.add(label)

@@ -42,6 +42,7 @@ topics, sub-points, cross-references, and icons — built by an LLM that
 - [Output formats: OPML vs. XMind](#output-formats-opml-vs-xmind)
 - [Batch: playlists & course folders](#batch-playlists--course-folders)
 - [Local video: embedded subtitles & Whisper](#local-video-embedded-subtitles--whisper)
+- [Folder structure maps (`cerebro tree`)](#folder-structure-maps-cerebro-tree)
 - [Caching](#caching)
 - [Examples](#examples)
 - [Troubleshooting](#troubleshooting)
@@ -277,6 +278,19 @@ All `map` flags apply, plus:
 | `--workers`, `-w` | `3` | How many videos/lessons process concurrently |
 | `--limit` | *(none)* | Only process the first N items — useful for a big playlist |
 
+### `cerebro tree PATH [options]`
+
+Map a folder's directory structure — see
+[Folder structure maps](#folder-structure-maps-cerebro-tree).
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--engine`, `-e` | `heuristic` | `heuristic` (free/instant) \| `groq` \| `gemini` — AI folder-purpose labels |
+| `--max-depth` | `8` | Maximum folder nesting depth |
+| `--max-files` | `20` | Max files listed per folder before collapsing to a count |
+| `--no-gitignore` | off | Don't respect the folder's `.gitignore` |
+| `--format`, `-f` / `--out`, `-o` / `--no-cache` / `--preview` | *(same as `map`)* | |
+
 ### `cerebro interactive`
 
 Launches the guided wizard explicitly (same as running `cerebro` with no
@@ -375,6 +389,31 @@ aren't supported — those need OCR, which is out of scope.
 Whisper transcriptions are cached, so re-processing the same file (e.g. at a
 different level) never re-transcribes.
 
+## Folder structure maps (`cerebro tree`)
+
+A completely different thing from `batch` — `batch` treats a folder as a
+*course of video lessons*; `tree` treats it as a *directory to map*, no video
+involved at all:
+
+```bash
+cerebro tree ./my_project
+cerebro tree ./my_project --engine groq   # AI-inferred folder purpose labels
+```
+
+The hierarchy doesn't need discovering (the filesystem already gives it to
+you), so this defaults to `--engine heuristic` — instant, free, fully
+offline — unlike `map`/`batch` where AI is the default. Pass `--engine groq`
+or `--engine gemini` to opt into a purpose label per folder (e.g. `auth/` →
+"Authentication & session handling") inferred from its name and immediate
+contents; the folder's real name stays the node title, the inferred purpose
+goes in the note, so both are visible.
+
+Noise is filtered automatically: `.git`, `node_modules`, `__pycache__`,
+`.venv`, build output, and similar are always skipped, and the folder's own
+`.gitignore` is respected too (`--no-gitignore` to disable that). Very large
+folders are kept usable with `--max-files` (default 20 per folder, collapses
+the rest to a count) and `--max-depth` (default 8).
+
 ## Caching
 
 Every expensive step — a transcription, a map/reduce/link LLM call — is
@@ -462,6 +501,7 @@ word-count budget staying only as a hard ceiling.
 | `cerebro.ir` | The `MindMap` intermediate representation itself |
 | `cerebro.convert` | IR → OPML / native XMind |
 | `cerebro.batch` | Fan-out + merge for playlists and course folders |
+| `cerebro.foldermap` | Directory structure → `MindMap` IR, for `cerebro tree` — a separate concern from the video pipeline entirely |
 | `cerebro.llm` | Provider abstraction (Groq / Gemini / mock) |
 | `cerebro.cache` | Content-addressed caching |
 | `cerebro.paths` | Stable, home-relative locations (`~/.cerebro/.env`, `~/cerebro-maps/`) so a globally-installed CLI works the same from any directory |

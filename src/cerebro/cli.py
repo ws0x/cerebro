@@ -32,6 +32,7 @@ from . import __version__
 from .batch import BatchItem, run_batch
 from .cache import Cache
 from .convert import write_opml, write_xmind
+from .foldermap import build_folder_map, label_folders
 from .ingest import load_transcript
 from .ingest.folder import discover_course_sources
 from .ingest.playlist import is_playlist_url, load_playlist
@@ -45,7 +46,8 @@ from .wizard import run_wizard
 
 _EPILOG = (
     'Examples: cerebro (wizard)  |  cerebro map "URL" -l expert  |  '
-    'cerebro batch "playlist URL" --limit 10  |  cerebro batch ./course_folder --format xmind'
+    'cerebro batch "playlist URL" --limit 10  |  cerebro batch ./course_folder --format xmind  |  '
+    "cerebro tree ./my_project --engine groq"
 )
 
 app = typer.Typer(
@@ -351,6 +353,88 @@ def _do_batch(
         console.print()
 
     _export(combined, fmt, out, level, time.perf_counter() - t0)
+
+
+@app.command()
+def tree(
+    path: str = typer.Argument(..., help="Local folder to map (not a video/course folder)."),
+    fmt: str = typer.Option(None, "--format", "-f", help="opml | xmind"),
+    out: Path = typer.Option(None, "--out", "-o", help="Output file path."),
+    engine: str = typer.Option(
+        None, "--engine", "-e", help="heuristic (default, free/instant) | groq | gemini — AI-labels folder purposes"
+    ),
+    max_depth: int = typer.Option(8, "--max-depth", help="Maximum folder nesting depth."),
+    max_files: int = typer.Option(20, "--max-files", help="Max files listed per folder before collapsing to a count."),
+    no_gitignore: bool = typer.Option(False, "--no-gitignore", help="Don't respect the folder's .gitignore."),
+    no_cache: bool = typer.Option(False, "--no-cache", help="Disable the AI-label response cache."),
+    preview: bool = typer.Option(True, "--preview/--no-preview", help="Show the map in-terminal."),
+):
+    """Map a folder's directory structure — not a video or course folder."""
+    _do_tree(path, fmt, out, engine, max_depth, max_files, not no_gitignore, no_cache, preview)
+
+
+def _do_tree(
+    path: str,
+    fmt: str | None,
+    out: Path | None,
+    engine: str | None,
+    max_depth: int,
+    max_files: int,
+    respect_gitignore: bool,
+    no_cache: bool,
+    preview: bool,
+) -> None:
+    config = load_config()
+    fmt = fmt or config.get("format") or "opml"
+    engine = engine or "heuristic"  # unlike map/batch, AI is opt-in here — the structure is already known
+
+    t0 = time.perf_counter()
+
+    try:
+        with console.status("[cyan]Walking folder…", spinner="dots"):
+            mm = build_folder_map(path, max_depth=max_depth, max_files=max_files, respect_gitignore=respect_gitignore)
+    except ValueError as exc:
+        console.print(f"[red]✗ {exc}[/]")
+        raise typer.Exit(code=1)
+
+    console.print(f"[green]✓[/] Walked [bold]{path}[/]: {mm.node_count()} nodes, depth {mm.depth()}")
+
+    try:
+        provider = resolve_provider(engine)
+    except ConfigError as exc:
+        console.print(f"[red]✗ {exc}[/]")
+        raise typer.Exit(code=1)
+
+    if provider is not None:
+        cache = Cache(enabled=not no_cache)
+        with RichProgress(
+            SpinnerColumn(),
+            TextColumn("[cyan]{task.description}"),
+            BarColumn(),
+            TextColumn("{task.completed}/{task.total}"),
+            TimeElapsedColumn(),
+            console=console,
+            transient=True,
+        ) as progress:
+            task = progress.add_task("Labeling folders", total=1)
+
+            def on_event(kind, **d):
+                if kind == "label_start":
+                    progress.update(task, total=d["total"], completed=0)
+                elif kind == "label_progress":
+                    progress.update(task, completed=d["done"])
+
+            label_folders(mm, provider, cache, on_event=on_event)
+        console.print(f"[green]✓[/] Labeled folders with [bold]{provider.name}:{provider.model}[/]")
+    elif engine != "heuristic":
+        console.print("[yellow]![/] No API key found — skipping AI folder labeling.")
+
+    if preview:
+        console.print()
+        print_preview(mm, max_depth=6)
+        console.print()
+
+    _export(mm, fmt, out, "structure", time.perf_counter() - t0)
 
 
 @app.command()

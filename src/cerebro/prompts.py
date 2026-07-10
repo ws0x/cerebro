@@ -96,6 +96,24 @@ Return ONLY JSON:
 Return at most {limit} of the strongest cross-video relationships. Use the integer ids shown."""
 
 
+_FOLDER_LABEL = """You are analyzing a software project's folder structure.
+Given a folder's name and the names of its immediate subfolders/files, infer
+a short, specific purpose label for what this folder is for, aimed at someone
+unfamiliar with the codebase.
+
+GROUNDING RULE: base the label only on the folder name and the file/folder
+names actually given — do not assume a specific framework, language, or
+technology unless a file name literally evidences it (e.g. "pyproject.toml"
+implies Python, but do not guess further than that).
+
+Return ONLY JSON:
+{"label": "short purpose phrase, max 6 words"}
+If the folder's purpose is already fully obvious from its name alone (e.g.
+"tests", "docs", "images"), it is fine to return that same word, capitalized."""
+
+FOLDER_LABEL_SYSTEM = _FOLDER_LABEL
+
+
 def link_system(limit: int) -> str:
     return _LINK_TEMPLATE.format(limit=limit)
 
