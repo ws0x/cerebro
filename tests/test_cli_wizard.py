@@ -8,6 +8,7 @@ from cerebro.wizard import (
     _ask_text,
     _clean,
     _default_output_path,
+    _effective_out,
     _kind_for,
     _remember_last_answers,
     _resync_output_extension,
@@ -190,3 +191,22 @@ def test_ask_source_for_mode_ignores_clipboard_when_a_default_is_already_set(tmp
     # "back") must win over a clipboard guess -- checking the clipboard is
     # only for the very first ask, not every re-prompt in the retry loop
     mock_suggest.assert_not_called()
+
+
+def test_effective_out_returns_none_when_output_is_still_the_mechanical_default(tmp_path, monkeypatch):
+    monkeypatch.setattr("cerebro.paths.DEFAULT_OUTPUT_DIR", tmp_path)
+    default = _default_output_path("https://youtu.be/abc123", "youtube", "opml")
+    assert _effective_out("https://youtu.be/abc123", "youtube", "opml", default) is None
+
+
+def test_effective_out_respects_a_user_customized_path(tmp_path, monkeypatch):
+    monkeypatch.setattr("cerebro.paths.DEFAULT_OUTPUT_DIR", tmp_path)
+    custom = tmp_path / "my_custom_name.opml"
+    assert _effective_out("https://youtu.be/abc123", "youtube", "opml", custom) == custom
+
+
+def test_effective_out_for_a_local_file_matching_the_default_stem(tmp_path, monkeypatch):
+    monkeypatch.setattr("cerebro.paths.DEFAULT_OUTPUT_DIR", tmp_path)
+    pdf = tmp_path / "some_source.pdf"
+    default = _default_output_path(str(pdf), "file", "opml")
+    assert _effective_out(str(pdf), "file", "opml", default) is None

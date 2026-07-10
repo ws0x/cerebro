@@ -377,6 +377,20 @@ def _ask_output(fmt: str, default: str, allow_back: bool = False) -> str:
     return _ask_path("Output path:", default=default, allow_back=allow_back)
 
 
+def _effective_out(source: str, kind: str, fmt: str, out: Path) -> Path | None:
+    """``None`` tells _export() (cli.py) to name the file after the real,
+    just-fetched title instead of this pre-fetch guess -- for a YouTube
+    video or web article specifically, that guess can only ever be the
+    generic "mindmap" (the real title isn't known this early), so without
+    this every wizard-driven video/article map would land as
+    "mindmap.opml" instead of the video's/article's actual name, exactly
+    like `cerebro map URL` (no wizard) already gets for free via
+    _export()'s own out-is-None default. Only kicks in when the user never
+    diverged from the wizard's own mechanical default -- a path they
+    actually typed or edited is always respected exactly as given."""
+    return None if out == _default_output_path(source, kind, fmt) else out
+
+
 def _resync_output_extension(out: Path | None, fmt: str) -> Path | None:
     """Format can change after the output path was already set -- the
     step-loop's own "back" to format-then-forward-to-output, or the confirm
@@ -577,11 +591,12 @@ def run_wizard(
     _remember_last_answers(level, engine, fmt, tree_engine)
 
     def _build() -> None:
+        effective_out = _effective_out(source, kind, fmt, out)
         if mode == "tree":
             do_tree(
                 source,
                 fmt,
-                out,
+                effective_out,
                 tree_engine,
                 max_depth=8,
                 max_files=20,
@@ -594,11 +609,11 @@ def run_wizard(
             )
         elif kind in ("playlist", "folder"):
             do_batch(
-                source, level, fmt, out, engine,
+                source, level, fmt, effective_out, engine,
                 workers=3, limit=None, fresh=False, no_cache=False, preview=True,
             )
         else:
-            do_map(source, level, fmt, out, engine, no_cache=False, preview=True)
+            do_map(source, level, fmt, effective_out, engine, no_cache=False, preview=True)
 
     # A failure here (bad URL that only breaks at fetch time, a network
     # blip, a private/deleted video) must not throw away everything answered

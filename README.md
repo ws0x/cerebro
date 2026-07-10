@@ -300,16 +300,24 @@ Build a mind map from a single source.
 | `--level`, `-l` | `full` | `brief` \| `full` \| `expert` — see [Processing levels](#processing-levels) |
 | `--engine`, `-e` | `auto` | `auto` \| `groq` \| `gemini` \| `heuristic` — see [Choosing an engine](#choosing-an-engine) |
 | `--format`, `-f` | `opml` | `opml` \| `xmind` — see [Output formats](#output-formats-opml-vs-xmind) |
-| `--out`, `-o` | `~/cerebro-maps/<title>.<format>` | Output file path |
+| `--out`, `-o` | *(default output dir)*`/<title>.<format>` | Output file path |
 | `--no-cache` | off | Disable the response cache for this run |
 | `--preview` / `--no-preview` | preview on | Show/hide the in-terminal tree before writing the file |
 | `--yes`, `-y` | off | Overwrite an existing output file without asking |
 | `--dry-run` | off | *(batch/tree only)* Show what would be reused vs. freshly processed, without spending any API calls or writing output |
 
-If you don't pass `--out`, cerebro writes to a dedicated `~/cerebro-maps/`
-folder (created automatically) named after the source's title — not the
-current directory, so files don't scatter across wherever you happened to run
-the command from.
+If you don't pass `--out`, cerebro writes to a dedicated output folder
+(created automatically) named after the source's title — a video/file/PDF's
+own title, or the folder's own name for `batch`/`tree` — not the current
+directory, so files don't scatter across wherever you happened to run the
+command from.
+
+That folder defaults to `~/cerebro-maps/`, but this specific build's
+`paths.py` can point it somewhere else instead (e.g. a synced cloud-drive
+folder) — set the **`CEREBRO_OUTPUT_DIR`** environment variable to override
+it without touching code. If the configured folder isn't reachable when
+cerebro runs (an unmounted drive, a sync client that isn't running), it
+falls back to `~/cerebro-maps/` automatically and tells you it did.
 
 Mapping the exact same source at the exact same level/format again prints a
 note pointing at the previous output instead of silently rebuilding — purely
@@ -360,13 +368,13 @@ cerebro search "consistent hashing" --dir ./some/other/output/folder
 ```
 
 Plain substring match (case-insensitive by default) against every node's
-title and note, across every `.opml`/`.xmind` file in `~/cerebro-maps/`
-(or `--dir`), recursively. Prints the matching file, node title, and a note
-snippet for each hit.
+title and note, across every `.opml`/`.xmind` file in the default output
+folder (or `--dir`), recursively. Prints the matching file, node title, and
+a note snippet for each hit.
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--dir`, `-d` | `~/cerebro-maps` | Folder to search |
+| `--dir`, `-d` | *(default output dir)* | Folder to search |
 | `--case-sensitive` | off | Match case exactly |
 | `--limit` | `10` | Max matches shown per file |
 
@@ -840,7 +848,7 @@ word-count budget staying only as a hard ceiling.
 | `cerebro.foldermap` | Directory structure → `MindMap` IR, for `cerebro tree` — a separate concern from the video pipeline entirely |
 | `cerebro.llm` | Provider abstraction (Groq / Gemini / mock) |
 | `cerebro.cache` | Content-addressed caching |
-| `cerebro.paths` | Stable, home-relative locations (`~/.cerebro/.env`, `~/cerebro-maps/`) so a globally-installed CLI works the same from any directory |
+| `cerebro.paths` | Stable locations (`~/.cerebro/.env`, a configurable default output folder via `CEREBRO_OUTPUT_DIR`) so a globally-installed CLI works the same from any directory |
 | `cerebro.ui` | Rich banner, progress, and the in-terminal map preview |
 | `cerebro.wizard` | The guided interactive flow (arrow-key menus with a plain-prompt fallback) |
 | `cerebro.cli` | Typer commands (`map`, `batch`, `interactive`) |
