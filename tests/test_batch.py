@@ -1,5 +1,6 @@
 import fitz
 
+import cerebro.batch as batch_module
 from cerebro.batch import BatchItem, dry_run_batch, forget_batch_snapshot, list_batch_snapshots, run_batch
 from cerebro.cache import Cache
 from cerebro.ir import NodeType
@@ -47,6 +48,81 @@ def _build_pdf_with_toc(tmp_path):
     doc.save(str(path))
     doc.close()
     return path
+
+
+def test_batch_checkpoints_the_snapshot_after_every_item_not_just_at_the_end(tmp_path, monkeypatch):
+    # Regression test: a killed/crashed run (Ctrl+C, network drop) partway
+    # through a long batch must not lose already-completed items just
+    # because the snapshot used to only get saved once, after everything
+    # finished. max_workers=1 makes completion order deterministic (item
+    # order) so the assertions below aren't racy.
+    for i in range(3):
+        f = tmp_path / f"lesson{i}.txt"
+        f.write_text(f"Lesson {i} covers a distinct topic with enough words to structure.")
+    items = [BatchItem(f"Lesson {i}", str(tmp_path / f"lesson{i}.txt")) for i in range(3)]
+
+    snapshot_calls: list[dict] = []
+    real_save = batch_module._save_batch_snapshot
+
+    def spy_save(batch_source, params, items_data, snapshot_dir):
+        snapshot_calls.append(dict(items_data))  # shallow copy at call time
+        return real_save(batch_source, params, items_data, snapshot_dir)
+
+    monkeypatch.setattr("cerebro.batch._save_batch_snapshot", spy_save)
+
+    run_batch(
+        items,
+        lambda: HeuristicStructurer(),
+        level="full",
+        title="Course",
+        max_workers=1,
+        batch_source="test://checkpoint-batch",
+        snapshot_dir=tmp_path / "snapshots",
+    )
+
+    # One checkpoint per successfully completed item (plus a final redundant
+    # save after the loop, for consistency) -- not just one at the very end.
+    assert len(snapshot_calls) == 4
+    assert len(snapshot_calls[0]) == 1  # after item 1: only item 1 saved so far
+    assert len(snapshot_calls[1]) == 2  # after item 2: items 1+2 saved so far
+    assert len(snapshot_calls[2]) == 3  # after item 3: all three saved
+    assert len(snapshot_calls[3]) == 3  # final save: unchanged, all three
+
+
+def test_batch_interrupted_mid_run_still_leaves_completed_items_checkpointed(tmp_path):
+    # The realistic version of the checkpoint test above: simulate an actual
+    # Ctrl+C (KeyboardInterrupt, which _process()'s `except Exception` does
+    # NOT swallow -- correctly, since that's what lets a genuine interrupt
+    # still abort the run) partway through a batch, then confirm the items
+    # that finished first are already on disk even though run_batch itself
+    # never returns normally.
+    for i in range(3):
+        f = tmp_path / f"lesson{i}.txt"
+        content = "CRASH_HERE marker text" if i == 2 else f"Lesson {i} covers a distinct topic with enough words to structure."
+        f.write_text(content)
+    items = [BatchItem(f"Lesson {i}", str(tmp_path / f"lesson{i}.txt")) for i in range(3)]
+
+    class _CrashOnMarker:
+        def structure(self, transcript, level="full"):
+            if any("CRASH_HERE" in s.text for s in transcript.segments):
+                raise KeyboardInterrupt()
+            return HeuristicStructurer().structure(transcript, level=level)
+
+    snapshot_dir = tmp_path / "snapshots"
+    raised = False
+    try:
+        run_batch(
+            items, lambda: _CrashOnMarker(), level="full", title="Course",
+            max_workers=1, batch_source="test://crash-batch", snapshot_dir=snapshot_dir,
+        )
+    except KeyboardInterrupt:
+        raised = True
+    assert raised, "expected the KeyboardInterrupt to propagate out of run_batch, matching real Ctrl+C"
+
+    # Even though run_batch never returned, the two items that finished
+    # before the interrupt must already be checkpointed to disk.
+    reused, new = dry_run_batch(items, "full", "test://crash-batch", snapshot_dir=snapshot_dir)
+    assert set(reused) == {"Lesson 0", "Lesson 1"}
 
 
 def test_batch_item_with_a_real_pdf_outline_keeps_its_hierarchy_not_flattened(tmp_path):

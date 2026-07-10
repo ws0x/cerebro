@@ -206,12 +206,38 @@ def run_batch(
             return BatchOutcome(item.label, None, str(exc), time.perf_counter() - t0)
 
     outcomes: dict[int, BatchOutcome] = {}
+    items_data: dict[str, dict] = {}
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         futures = {pool.submit(_process, item): i for i, item in enumerate(items)}
         for fut in as_completed(futures):
             i = futures[fut]
             outcome = fut.result()
             outcomes[i] = outcome
+            if outcome.mindmap is not None:
+                item = items[i]
+                branch = outcome.mindmap.root
+                branch.type = NodeType.topic
+                # Use the batch item's own label (playlist video title /
+                # lesson filename) rather than the structurer's guess at a
+                # title, so branches match the source listing the user
+                # recognizes.
+                branch.title = outcome.label
+                items_data[item.source] = {
+                    "label": outcome.label,
+                    "branch": branch.model_dump(mode="json"),
+                    "relationships": [r.model_dump(mode="json") for r in outcome.mindmap.relationships],
+                }
+                # Checkpoint after every item, not just once at the very
+                # end -- a killed/crashed run (Ctrl+C, network drop, power
+                # loss) partway through a long playlist/course folder then
+                # loses nothing already completed on the next attempt,
+                # instead of refetching and re-structuring everything from
+                # scratch just because the run didn't reach its last item.
+                # A full overwrite per item is fine at the scale this is for
+                # (tens of items, not thousands); a throttled/batched saver
+                # would just be complexity nothing here needs yet.
+                if batch_source:
+                    _save_batch_snapshot(batch_source, params, items_data, snapshot_dir)
             on_event(
                 "item_done",
                 completed=len(outcomes),
@@ -225,23 +251,11 @@ def run_batch(
 
     root = Node(title=title, type=NodeType.root)
     relationships: list[Relationship] = []
-    items_data: dict[str, dict] = {}
     for item, outcome in zip(items, ordered):
         if outcome.mindmap is None:
             continue
-        branch = outcome.mindmap.root
-        branch.type = NodeType.topic
-        # Use the batch item's own label (playlist video title / lesson
-        # filename) rather than the structurer's guess at a title, so branches
-        # match the source listing the user recognizes.
-        branch.title = outcome.label
-        root.children.append(branch)
+        root.children.append(outcome.mindmap.root)  # type/title already set above
         relationships.extend(outcome.mindmap.relationships)
-        items_data[item.source] = {
-            "label": outcome.label,
-            "branch": branch.model_dump(mode="json"),
-            "relationships": [r.model_dump(mode="json") for r in outcome.mindmap.relationships],
-        }
 
     if not root.children:
         root.add("(no items processed successfully)", type=NodeType.detail)
