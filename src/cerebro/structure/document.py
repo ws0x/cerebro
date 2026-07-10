@@ -24,7 +24,8 @@ from ..ir import MindMap, Node, NodeType
 from ..llm.base import LLMError, LLMProvider
 from ..prompts import MAP_SYSTEM, PROMPT_VERSION
 from ..transcript import Transcript
-from .llm import link_relationships
+from .heuristic import HeuristicStructurer
+from .llm import LLMStructurer, link_relationships
 
 _NOTE_LIMIT = 500  # matches structure/heuristic.py's own truncate limit
 _MAX_WORDS = {"brief": 2000, "full": 1400, "expert": 1200}  # matches structure/llm.py's budget
@@ -167,6 +168,7 @@ def build_outline_map(
     level: str = "full",
     on_event: Callable[..., None] | None = None,
     relationship_limit: int = 8,
+    max_workers: int = 6,
 ) -> MindMap:
     """Build the deterministic skeleton, then -- given a provider, and above
     brief level (brief stays free even with a key configured, matching its
@@ -191,7 +193,7 @@ def build_outline_map(
     # success; a leaf whose enrichment call fails keeps this instead of
     # being left blank.
     _apply_fallback_notes(leaf_sections)
-    _enrich_leaves(leaf_sections, provider, cache, level, on_event)
+    _enrich_leaves(leaf_sections, provider, cache, level, on_event, max_workers=max_workers)
 
     if level == "expert":
         link_relationships(
@@ -200,3 +202,52 @@ def build_outline_map(
 
     on_event("done", nodes=mm.node_count(), relationships=len(mm.relationships))
     return mm
+
+
+class OutlineAwareStructurer:
+    """``Structurer``-protocol adapter: a source with a real outline (a PDF
+    with a TOC/detected headings) routes through ``build_outline_map``
+    instead of being flattened through the video-oriented heuristic/LLM
+    structurer. A source with no outline falls through to that same
+    heuristic/LLM structurer, unchanged.
+
+    ``cerebro map``'s own single-item path (``cli.py``'s ``_structure()`` /
+    ``_structure_document()``) already does this same branching itself, with
+    its own progress-bar wiring, so it doesn't use this class. This exists
+    for ``cerebro batch``: course folders can mix PDFs in with videos (see
+    ``ingest/folder.py``), and each item there is structured via a single
+    ``Structurer.structure(transcript, level)`` call with no per-item
+    sub-progress UI to preserve -- so a plain protocol-conforming adapter is
+    the natural fit, and it's what guarantees a PDF mixed into a batch keeps
+    its real hierarchy instead of losing it to reduce-from-flat-text."""
+
+    def __init__(
+        self,
+        provider: LLMProvider | None,
+        cache: Cache,
+        relationship_limit: int = 8,
+        max_workers: int = 6,
+    ):
+        self.provider = provider
+        self.cache = cache
+        self.relationship_limit = relationship_limit
+        self.max_workers = max_workers
+
+    def structure(self, transcript: Transcript, level: str = "full") -> MindMap:
+        if transcript.outline:
+            return build_outline_map(
+                transcript,
+                self.provider,
+                self.cache,
+                level=level,
+                relationship_limit=self.relationship_limit,
+                max_workers=self.max_workers,
+            )
+        if self.provider is None:
+            return HeuristicStructurer().structure(transcript, level=level)
+        return LLMStructurer(
+            self.provider,
+            self.cache,
+            max_workers=self.max_workers,
+            relationship_limit=self.relationship_limit,
+        ).structure(transcript, level=level)

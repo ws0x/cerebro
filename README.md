@@ -2,12 +2,12 @@
 
 # cerebro
 
-**Turn video into structured knowledge — not just a summary.**
+**Turn video and PDFs into structured knowledge — not just a summary.**
 
-Point it at a YouTube video, a whole playlist, a course folder, or a local
-file. Get back a hierarchical, XMind-compatible mind map with real structure:
-topics, sub-points, cross-references, and icons — built by an LLM that
-*understands* the content, not a transcript-slicer that pretends to.
+Point it at a YouTube video, a whole playlist, a course folder, a local video
+file, or a PDF. Get back a hierarchical, XMind-compatible mind map with real
+structure: topics, sub-points, cross-references, and icons — built by an LLM
+that *understands* the content, not a transcript-slicer that pretends to.
 
 [![CI](https://github.com/ws0x/cerebro/actions/workflows/ci.yml/badge.svg)](https://github.com/ws0x/cerebro/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](#license)
@@ -24,7 +24,7 @@ topics, sub-points, cross-references, and icons — built by an LLM that
 │  / __|| __|| _ \| __|| _ )| _ \/ _ \  │
 │ | (__ | _| |   /| _| | _ \|   / (_) | │
 │  \___||___||_|_\|___||___/|_|_\\___/  │
-│      video  ->  smart mind maps       │
+│     content  ->  smart mind maps      │
 │                                       │
 └─────────────── cerebro ───────────────┘
 ```
@@ -382,7 +382,9 @@ cerebro batch ./my_course_folder --format xmind
   (`lesson1.mp4` + `lesson1.srt`) when present. Videos with no sidecar
   subtitle aren't skipped — they're processed via embedded-subtitle
   extraction or Whisper, cerebro just tells you up front that those will be
-  slower.
+  slower. PDFs in the same folder need no pairing — each is included as its
+  own lesson and keeps its own real structure (see [PDF files](#pdf-files)),
+  not flattened into the others.
 - **Files/lessons are numbered-sort aware** — "Lesson 2" sorts before "Lesson
   10", not after.
 - **One bad item never kills the batch.** A private video, a missing
@@ -454,10 +456,13 @@ skips AI entirely even with a key configured (skeleton only, near-instant);
 `full` adds per-section extraction; `expert` additionally detects cross-section
 relationships.
 
+A course folder can freely mix PDF handouts/slides in with video lessons —
+`cerebro batch ./course_folder` picks up both, and each PDF keeps its own
+real structure inside its branch of the combined map, same as it would via a
+standalone `cerebro map`.
+
 **Not supported:** scanned/image-only PDFs (no text layer — would need OCR),
-tables and images within a PDF (text only), password-protected PDFs, and
-mixing PDFs into `cerebro batch`/course folders (single-file `map` only for
-now).
+tables and images within a PDF (text only), and password-protected PDFs.
 
 ## Folder structure maps (`cerebro tree`)
 

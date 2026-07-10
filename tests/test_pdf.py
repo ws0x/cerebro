@@ -9,8 +9,10 @@ import fitz
 import pytest
 
 from cerebro.cache import Cache
+from cerebro.convert.util import note_for
 from cerebro.ingest import load_transcript
 from cerebro.ingest.pdf import PdfIngestError, load_pdf
+from cerebro.structure.heuristic import HeuristicStructurer
 
 
 def _build_pdf_with_toc(tmp_path):
@@ -85,6 +87,39 @@ def test_load_pdf_raises_on_encrypted(tmp_path):
 def test_load_pdf_raises_on_missing_file(tmp_path):
     with pytest.raises(PdfIngestError, match="not found"):
         load_pdf(tmp_path / "missing.pdf")
+
+
+def test_load_pdf_segments_carry_no_fake_timestamp(tmp_path):
+    # Segment.start/duration mean "seconds into the source" everywhere else
+    # (video/YouTube); a PDF page number must not masquerade as one, or the
+    # flat (no-outline) fallback path -- which reuses the unmodified
+    # HeuristicStructurer/LLMStructurer -- renders it as a bogus "[0:0N]".
+    path = _build_pdf_with_toc(tmp_path)  # 4 pages
+    transcript = load_pdf(path)
+    assert [(s.start, s.duration) for s in transcript.segments] == [(0.0, 0.0)] * 4
+
+
+def test_flat_pdf_through_heuristic_structurer_has_no_fake_page_timestamps(tmp_path):
+    doc = fitz.open()
+    for i in range(4):
+        page = doc.new_page()
+        page.insert_textbox(
+            fitz.Rect(72, 72, 500, 700),
+            f"Uniform body paragraph number {i} with the exact same font size "
+            "everywhere in this document, so no headings are ever detected here.",
+            fontsize=11,
+        )
+    path = tmp_path / "flat.pdf"
+    doc.save(str(path))
+    doc.close()
+
+    transcript = load_pdf(path)
+    assert transcript.outline == []  # confirms this exercises the flat fallback
+
+    mm = HeuristicStructurer().structure(transcript, level="full")
+    for node in mm.root.walk():
+        assert node.timestamp is None
+        assert not note_for(node).startswith("[")  # no stray [mm:ss] marker
 
 
 def _insert_lines(page, lines, start_y=72, line_height=20):

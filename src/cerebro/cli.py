@@ -59,7 +59,7 @@ from .llm.base import LLMError
 from .llm.config import ConfigError, load_env, read_env_file, resolve_provider, write_env_file
 from .paths import CONFIG_DIR, GLOBAL_ENV_PATH, ensure_output_dir, load_config, save_config
 from .structure import HeuristicStructurer
-from .structure.document import build_outline_map, build_outline_skeleton
+from .structure.document import OutlineAwareStructurer, build_outline_map, build_outline_skeleton
 from .structure.llm import LLMStructurer, link_relationships
 from .ui import banner, print_banner, print_preview
 from .wizard import run_wizard
@@ -72,7 +72,7 @@ _EPILOG = (
 
 app = typer.Typer(
     add_completion=True,
-    help="Turn video content into XMind-compatible smart mind maps. Run with no arguments for a guided wizard.",
+    help="Turn video and PDF content into XMind-compatible smart mind maps. Run with no arguments for a guided wizard.",
     epilog=_EPILOG,
 )
 
@@ -366,7 +366,12 @@ def _do_map(
         with _spinner("Loading transcript…"):
             transcript = load_transcript(source, whisper_model=whisper_model, cache=cache)
     except Exception as exc:
-        _error(f"Failed to load transcript: {exc}", fix="Check the URL or file path is correct and reachable.")
+        # No blanket fix hint here -- every ingest module (YouTube, video,
+        # PDF) already raises a specific, self-explanatory message ("ffmpeg
+        # not found on PATH", "encrypted PDFs are not supported", "File not
+        # found: ..."), so a generic "check the URL or path" bolt-on would
+        # actively mislead for anything that isn't a path typo.
+        _error(f"Failed to load transcript: {exc}")
     qprint(
         f"[green]✓[/] Transcript: [bold]{transcript.title}[/] "
         f"— {transcript.word_count:,} words, {len(transcript.segments):,} segments"
@@ -538,9 +543,13 @@ def _do_batch(
     def structurer_factory():
         # Halve the per-video map-call concurrency so total concurrent LLM
         # requests (batch workers × per-video workers) stays bounded — free-tier
-        # rate limits don't scale with playlist size.
-        return HeuristicStructurer() if provider is None else LLMStructurer(
-            provider, cache, max_workers=2, relationship_limit=relationship_limit
+        # rate limits don't scale with playlist size. OutlineAwareStructurer
+        # routes any item with a real outline (a PDF with a TOC/detected
+        # headings, now that course folders can mix PDFs in -- see
+        # ingest/folder.py) through build_outline_map instead of flattening
+        # it through this same video-oriented path everything else uses.
+        return OutlineAwareStructurer(
+            provider, cache, relationship_limit=relationship_limit, max_workers=2
         )
 
     failures: list[tuple[str, str]] = []

@@ -149,7 +149,14 @@ def load_pdf(path: str | Path, cache: Cache | None = None) -> Transcript:
             cache.set(key, data)
 
     title = data["title"] or path.stem.replace("_", " ").replace("-", " ").strip().title()
-    segments = [Segment(text=text, start=float(i)) for i, text in enumerate(data["pages"])]
+    # Segment.start/duration mean "seconds into the source" everywhere else in
+    # this codebase (video/YouTube ingest) and downstream code (HeuristicStructurer,
+    # LLMStructurer's MAP stage) propagates it straight into Node.timestamp, which
+    # every converter renders as [mm:ss]. A PDF page number is not a second count --
+    # leaving these at their 0.0 default (rather than start=page index) avoids a
+    # page showing up mislabeled as e.g. "[0:04]" in the flat (no-outline) fallback
+    # path used both by `map` on a structureless PDF and by `batch` course folders.
+    segments = [Segment(text=text) for text in data["pages"]]
     outline = [
         OutlineEntry(level=int(lvl), title=str(t).strip(), page=max(0, int(pg) - 1))
         for lvl, t, pg in data["toc"]

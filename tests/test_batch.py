@@ -1,6 +1,10 @@
+import fitz
+
 from cerebro.batch import BatchItem, dry_run_batch, forget_batch_snapshot, list_batch_snapshots, run_batch
+from cerebro.cache import Cache
 from cerebro.ir import NodeType
 from cerebro.structure import HeuristicStructurer
+from cerebro.structure.document import OutlineAwareStructurer
 
 
 def test_batch_merges_successful_items_and_survives_failures(tmp_path):
@@ -31,6 +35,41 @@ def test_batch_merges_successful_items_and_survives_failures(tmp_path):
     errors = [o for o in outcomes if o.error]
     assert len(errors) == 1
     assert errors[0].label == "Missing"
+
+
+def _build_pdf_with_toc(tmp_path):
+    doc = fitz.open()
+    for i in range(3):
+        page = doc.new_page()
+        page.insert_text((72, 72), f"Page {i} body text about chapter content.")
+    doc.set_toc([[1, "Chapter One", 1], [1, "Chapter Two", 2]])
+    path = tmp_path / "slides.pdf"
+    doc.save(str(path))
+    doc.close()
+    return path
+
+
+def test_batch_item_with_a_real_pdf_outline_keeps_its_hierarchy_not_flattened(tmp_path):
+    # Regression test: course folders can mix PDFs in with videos/subtitles
+    # (see ingest/folder.py). A PDF with a real TOC must keep that structure
+    # inside its batch branch, not get flattened through the same
+    # video-oriented reduce-from-flat-text path used for everything else.
+    pdf = _build_pdf_with_toc(tmp_path)
+    txt = tmp_path / "notes.txt"
+    txt.write_text("Plain lesson notes with no real structure at all here.")
+
+    items = [BatchItem("Slides", str(pdf)), BatchItem("Notes", str(txt))]
+    combined, outcomes, _diff = run_batch(
+        items,
+        lambda: OutlineAwareStructurer(None, Cache(enabled=False)),
+        level="full",
+        title="Course",
+        max_workers=2,
+    )
+
+    assert all(o.error is None for o in outcomes)
+    slides_branch = next(c for c in combined.root.children if c.title == "Slides")
+    assert [c.title for c in slides_branch.children] == ["Chapter One", "Chapter Two"]
 
 
 def test_batch_all_fail_yields_placeholder_not_crash(tmp_path):
