@@ -1,4 +1,4 @@
-from cerebro.batch import BatchItem, run_batch
+from cerebro.batch import BatchItem, forget_batch_snapshot, run_batch
 from cerebro.ir import NodeType
 from cerebro.structure import HeuristicStructurer
 
@@ -160,3 +160,36 @@ def test_no_batch_source_never_saves_or_reuses(tmp_path, tmp_path_factory):
     )
     assert diff2 is None
     assert list(snap_dir.glob("*.json")) == []
+
+
+# --- forget -----------------------------------------------------------------
+
+
+def test_forget_deletes_an_existing_snapshot_and_reports_true(tmp_path, tmp_path_factory):
+    items = _lesson_files(tmp_path, [("A", "Topic A content here.")])
+    snap_dir = tmp_path_factory.mktemp("snap")
+    run_batch(items, lambda: HeuristicStructurer(), level="full", title="Course",
+              batch_source="course://demo", snapshot_dir=snap_dir)
+
+    assert list(snap_dir.glob("*.json"))  # sanity: a snapshot exists
+    assert forget_batch_snapshot("course://demo", snapshot_dir=snap_dir) is True
+    assert not list(snap_dir.glob("*.json"))
+
+
+def test_forget_nonexistent_snapshot_reports_false(tmp_path_factory):
+    snap_dir = tmp_path_factory.mktemp("snap")
+    assert forget_batch_snapshot("course://never-run", snapshot_dir=snap_dir) is False
+
+
+def test_forgotten_batch_reprocesses_everything_next_run(tmp_path, tmp_path_factory):
+    items = _lesson_files(tmp_path, [("A", "Topic A content here.")])
+    snap_dir = tmp_path_factory.mktemp("snap")
+    run_batch(items, lambda: HeuristicStructurer(), level="full", title="Course",
+              batch_source="course://demo", snapshot_dir=snap_dir)
+    forget_batch_snapshot("course://demo", snapshot_dir=snap_dir)
+
+    _combined, _outcomes, diff = run_batch(
+        items, lambda: HeuristicStructurer(), level="full", title="Course",
+        batch_source="course://demo", snapshot_dir=snap_dir,
+    )
+    assert diff is None  # no history to diff against, same as a true first run

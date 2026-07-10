@@ -2,7 +2,7 @@ import json
 import time
 
 from cerebro.cache import Cache
-from cerebro.foldermap import build_folder_map, finalize_tree_snapshot, label_folders
+from cerebro.foldermap import build_folder_map, finalize_tree_snapshot, forget_tree_snapshot, label_folders
 from cerebro.ir import NodeType
 from cerebro.llm.providers import MockProvider
 
@@ -338,3 +338,31 @@ def test_label_folders_default_labels_whole_tree_when_nodes_not_given(tmp_path, 
 
     src_node = next(n for n in mm.root.walk() if n.title == "src")
     assert src_node.note == "Purpose of src"
+
+
+# --- forget -----------------------------------------------------------------
+
+
+def test_forget_deletes_an_existing_snapshot_and_reports_true(tmp_path, tmp_path_factory):
+    project = _make_project(tmp_path)
+    snap_dir = tmp_path_factory.mktemp("snap")
+    _map_reusing_snapshot(project, snap_dir)
+
+    assert list(snap_dir.glob("*.json"))  # sanity: a snapshot exists
+    assert forget_tree_snapshot(project, snapshot_dir=snap_dir) is True
+    assert not list(snap_dir.glob("*.json"))
+
+
+def test_forget_nonexistent_snapshot_reports_false(tmp_path, tmp_path_factory):
+    snap_dir = tmp_path_factory.mktemp("snap")
+    assert forget_tree_snapshot(tmp_path / "never-mapped", snapshot_dir=snap_dir) is False
+
+
+def test_forgotten_folder_rebuilds_from_scratch_next_run(tmp_path, tmp_path_factory):
+    project = _make_project(tmp_path)
+    snap_dir = tmp_path_factory.mktemp("snap")
+    _map_reusing_snapshot(project, snap_dir)
+    forget_tree_snapshot(project, snapshot_dir=snap_dir)
+
+    _mm, diff, _nodes = _map_reusing_snapshot(project, snap_dir)
+    assert diff is None  # no history to diff against, same as a true first run

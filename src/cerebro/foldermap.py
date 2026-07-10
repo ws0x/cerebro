@@ -159,6 +159,22 @@ def _snapshot_path(root: Path, snapshot_dir: Path) -> Path:
     return snapshot_dir / f"{key}.json"
 
 
+def forget_tree_snapshot(root: str | Path, snapshot_dir: str | Path | None = None) -> bool:
+    """Delete the incremental snapshot for ``root``, if one exists.
+
+    Doesn't require ``root`` to still exist on disk — forgetting the history
+    of a folder you've since deleted or renamed is a legitimate use. Returns
+    whether a snapshot actually existed to delete.
+    """
+    root = Path(root).resolve()
+    snapshot_dir = Path(snapshot_dir) if snapshot_dir is not None else TREE_SNAPSHOT_DIR
+    path = _snapshot_path(root, snapshot_dir)
+    if path.exists():
+        path.unlink()
+        return True
+    return False
+
+
 def _load_snapshot(root: Path, params: dict, snapshot_dir: Path) -> dict | None:
     path = _snapshot_path(root, snapshot_dir)
     if not path.exists():

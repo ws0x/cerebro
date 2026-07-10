@@ -28,12 +28,12 @@ from rich.progress import Progress as RichProgress
 from rich.table import Table
 
 from . import __version__
-from .batch import BatchItem, run_batch
+from .batch import BatchItem, forget_batch_snapshot, run_batch
 from .cache import Cache
 from .console import console, set_ascii, set_high_contrast
 from .convert import write_opml, write_xmind
 from .doctor import has_failures, run_diagnostics
-from .foldermap import build_folder_map, finalize_tree_snapshot, label_folders
+from .foldermap import build_folder_map, finalize_tree_snapshot, forget_tree_snapshot, label_folders
 from .ingest import load_transcript
 from .ingest.folder import discover_course_sources
 from .ingest.playlist import is_playlist_url, load_playlist
@@ -731,6 +731,30 @@ def cache_clear(
             raise typer.Exit()
     removed = cache.clear()
     console.print(f"[green]✓[/] Removed {removed} cached entries.")
+
+
+forget_app = typer.Typer(add_completion=False, help="Clear one folder's or playlist's incremental history without wiping the whole cache.")
+app.add_typer(forget_app, name="forget")
+
+
+@forget_app.command("tree")
+def forget_tree(path: str = typer.Argument(..., help="The folder path exactly as given to `cerebro tree`.")):
+    """Forget a folder's map history — the next `cerebro tree PATH` rebuilds it from scratch."""
+    if forget_tree_snapshot(path):
+        console.print(f"[green]✓[/] Forgot the map history for [bold]{path}[/]. The next run rebuilds it from scratch.")
+    else:
+        console.print(f"[dim]No saved history for {path} — nothing to forget.[/]")
+
+
+@forget_app.command("batch")
+def forget_batch(
+    source: str = typer.Argument(..., help="The playlist URL or course-folder path exactly as given to `cerebro batch`.")
+):
+    """Forget a playlist/course's batch history — the next `cerebro batch SOURCE` reprocesses everything."""
+    if forget_batch_snapshot(source):
+        console.print(f"[green]✓[/] Forgot the batch history for [bold]{source}[/]. The next run reprocesses everything.")
+    else:
+        console.print(f"[dim]No saved history for {source} — nothing to forget.[/]")
 
 
 def _export(mm, fmt: str, out: Path | None, level: str, elapsed: float, yes: bool = False) -> None:

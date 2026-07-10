@@ -493,6 +493,18 @@ or a second engine's key is reported as an advisory (`!`), not a failure;
 `cerebro doctor` only exits non-zero on a hard failure (an unsupported
 Python version, a missing core dependency, an unwritable storage path).
 
+## Forgetting incremental history (`cerebro forget`)
+
+```bash
+cerebro forget tree ./my_project        # same path as given to `cerebro tree`
+cerebro forget batch "playlist URL"     # same source as given to `cerebro batch`
+```
+
+`--fresh` ignores history for one run but still saves a new snapshot
+afterward. `forget` instead deletes the saved snapshot outright — the next
+run is treated as if that folder/playlist had never been mapped before, with
+no effect on the response cache or on any other folder/playlist's history.
+
 ## Caching
 
 Every expensive step — YouTube caption fetches, Whisper transcription, a

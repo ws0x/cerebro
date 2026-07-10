@@ -72,6 +72,23 @@ def _batch_snapshot_path(batch_source: str, snapshot_dir: Path) -> Path:
     return snapshot_dir / f"{key}.json"
 
 
+def forget_batch_snapshot(batch_source: str, snapshot_dir: str | Path | None = None) -> bool:
+    """Delete the incremental snapshot for ``batch_source``, if one exists.
+
+    ``batch_source`` must match exactly what was passed to ``cerebro batch``
+    (the raw playlist URL or folder path string) — the snapshot key is a hash
+    of that literal string, unlike the tree snapshot's resolved-path key,
+    since a batch source is just as often a URL as a filesystem path. Returns
+    whether a snapshot actually existed to delete.
+    """
+    snapshot_dir = Path(snapshot_dir) if snapshot_dir is not None else BATCH_SNAPSHOT_DIR
+    path = _batch_snapshot_path(batch_source, snapshot_dir)
+    if path.exists():
+        path.unlink()
+        return True
+    return False
+
+
 def _load_batch_snapshot(batch_source: str, params: dict, snapshot_dir: Path) -> dict | None:
     path = _batch_snapshot_path(batch_source, snapshot_dir)
     if not path.exists():
