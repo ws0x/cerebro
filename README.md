@@ -507,6 +507,23 @@ cerebro batch ./my_course_folder --format xmind
 - Every successful item becomes its own top-level branch in the final map,
   titled after the source (playlist video title or lesson filename).
 
+**At `--level expert`, cerebro also looks for connections *between* your
+sources**, not just within each one. Every item already gets its own
+within-source relationships from its own expert-level structuring; once
+everything's merged into one combined map, a second pass looks across all
+the branches together, so a concept in lesson 2 can connect to one in
+lesson 7 — or, just as usefully, a concept from a PDF handout can connect to
+one from a video lesson covering related material. This is guaranteed to
+actually be a cross-source connection, never a same-source one relabeled: a
+proposal that turns out to land inside a single branch is discarded before
+it's ever attached. The run reports how many of the total relationships are
+genuinely cross-source, separate from each item's own internal ones:
+
+```
+✓ Processed 2/2 item(s) with groq:llama-3.3-70b-versatile: 23 nodes, depth 6, 4 relationships
+  ↔ 4 of those connect different sources (e.g. a concept in one lesson linking to another) — the rest are within a single source.
+```
+
 **Reruns are incremental by default.** cerebro remembers which items it
 successfully processed for a given playlist/folder (`~/.cerebro/batch-snapshots/`)
 and reuses their branches as-is on a rerun — no transcript refetch, no

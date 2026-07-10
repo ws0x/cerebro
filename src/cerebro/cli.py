@@ -603,14 +603,21 @@ def _do_batch(
             batch_source=source,
         )
 
-    # Each video already got its own within-video links (if any) from its own
+    # Each item already got its own within-source links (if any) from its own
     # expert-level structuring above; this second pass looks across all of
-    # them together, so a concept in lesson 2 can connect to one in lesson 7.
+    # them together, so a concept in lesson 2 can connect to one in lesson 7
+    # -- link_relationships enforces cross_video proposals span two different
+    # top-level branches, so every relationship this pass adds is guaranteed
+    # to actually be a cross-source connection, never a same-source one that
+    # slipped through relabeled.
+    cross_source_relationships = 0
     if level == "expert" and provider is not None and combined.node_count() > 3:
-        with _spinner("Finding connections across videos…"):
+        before = len(combined.relationships)
+        with _spinner("Finding connections across sources…"):
             link_relationships(
                 combined, provider, cache, cross_video=True, relationship_limit=relationship_limit
             )
+        cross_source_relationships = len(combined.relationships) - before
 
     ok_count = sum(1 for o in outcomes if o.mindmap is not None)
     qprint(
@@ -618,6 +625,11 @@ def _do_batch(
         f"{combined.node_count()} nodes, depth {combined.depth()}"
         + (f", {len(combined.relationships)} relationships" if combined.relationships else "")
     )
+    if cross_source_relationships:
+        qprint(
+            f"[dim]  ↔ {cross_source_relationships} of those connect different sources "
+            f"(e.g. a concept in one lesson linking to another) — the rest are within a single source.[/]"
+        )
     if diff is not None:
         since = diff.previous_built_at or "an earlier run"
         parts = []
@@ -651,6 +663,7 @@ def _do_batch(
         "nodes": combined.node_count(),
         "depth": combined.depth(),
         "relationships": len(combined.relationships),
+        "cross_source_relationships": cross_source_relationships,
         "relationships_dropped": rel_dropped,
         "elapsed_seconds": round(elapsed, 2),
         "items_total": len(items),
