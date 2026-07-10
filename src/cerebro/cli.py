@@ -59,6 +59,7 @@ from .llm.base import LLMError
 from .llm.config import ConfigError, load_env, read_env_file, resolve_provider, write_env_file
 from .manifest import lookup as manifest_lookup
 from .manifest import record as manifest_record
+from .merge import MergeError, merge_maps
 from .paths import CONFIG_DIR, GLOBAL_ENV_PATH, ensure_output_dir, load_config, save_config
 from .search import search_maps
 from .structure import HeuristicStructurer
@@ -1019,6 +1020,63 @@ def search(
         console.print()
 
 
+@app.command()
+def merge(
+    files: list[Path] = typer.Argument(..., help="Two or more already-built .opml/.xmind files to combine."),
+    title: str = typer.Option("Merged Map", "--title", help="Title for the combined map's root."),
+    fmt: str = typer.Option(None, "--format", "-f", help="Output format: opml | xmind (default: xmind if any input carries relationships, else opml)."),
+    out: Path = typer.Option(None, "--out", "-o", help="Output file path."),
+    preview: bool = typer.Option(True, "--preview/--no-preview", help="Show the combined map in-terminal."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Overwrite an existing output file without asking."),
+):
+    """Combine two or more already-built maps into one -- no re-ingestion, no LLM calls.
+
+    Each input file becomes its own top-level branch under a new shared
+    root, exactly as batch already does for freshly-built sources -- useful
+    for combining, say, a video map and a PDF map on the same topic without
+    spending another API call on either one. Each file's own relationships
+    (XMind only -- OPML never carried any to begin with) are preserved.
+    """
+    if len(files) < 2:
+        _error("Need at least 2 files to merge.", fix="Pass two or more .opml/.xmind paths.")
+    for f in files:
+        if not f.exists():
+            _error(f"File not found: {f}")
+
+    t0 = time.perf_counter()
+    try:
+        mm = merge_maps(files, title=title)
+    except MergeError as exc:
+        _error(str(exc))
+
+    if fmt is None:
+        fmt = "xmind" if mm.relationships else "opml"
+
+    qprint(
+        f"[green]✓[/] Merged {len(files)} map(s): {mm.node_count()} nodes, depth {mm.depth()}"
+        + (f", {len(mm.relationships)} relationships" if mm.relationships else "")
+    )
+
+    if preview and not json_mode():
+        console.print()
+        print_preview(mm, max_depth=6)
+        console.print()
+
+    elapsed = time.perf_counter() - t0
+    written, rel_dropped = _export(mm, fmt, out, "merged", elapsed, yes=yes)
+    _emit_result({
+        "ok": True,
+        "files": [str(f) for f in files],
+        "format": fmt,
+        "output": str(written),
+        "nodes": mm.node_count(),
+        "depth": mm.depth(),
+        "relationships": len(mm.relationships),
+        "relationships_dropped": rel_dropped,
+        "elapsed_seconds": round(elapsed, 2),
+    })
+
+
 def _dashboard_layout():
     from rich.layout import Layout
 
@@ -1261,6 +1319,18 @@ def _export(mm, fmt: str, out: Path | None, level: str, elapsed: float, yes: boo
 
     if out is None:
         out = ensure_output_dir() / f"{_safe_filename(mm.title)}.{fmt}"
+    elif out.suffix.lstrip(".").lower() != fmt:
+        # The file's actual on-disk content must always match its extension
+        # -- an explicit --out whose extension disagrees with the resolved
+        # --format (e.g. a saved config default, or an auto-picked format
+        # like merge's "xmind if any input has relationships") would
+        # otherwise write XMind's zip archive into a file literally named
+        # .opml, which nothing can open correctly. The stem/directory the
+        # caller chose is always kept -- only the suffix is corrected.
+        corrected = out.with_suffix(f".{fmt}")
+        if not json_mode():
+            console.print(f"[dim]  ↳ Output extension adjusted to match --format {fmt}: {corrected.name}[/]")
+        out = corrected
     # Applies whether `out` was explicit or auto-generated from the title —
     # re-running the same source without --out resolves to the same default
     # path, so it's just as capable of silently clobbering prior work.

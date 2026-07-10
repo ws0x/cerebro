@@ -367,6 +367,27 @@ snippet for each hit.
 | `--case-sensitive` | off | Match case exactly |
 | `--limit` | `10` | Max matches shown per file |
 
+### `cerebro merge FILE FILE [FILE...] [options]`
+
+Combine two or more **already-built** maps into one — no re-ingestion, no
+LLM calls spent. Each file becomes its own top-level branch under a new
+shared root, exactly like `batch` does for freshly-built sources.
+
+```bash
+cerebro merge lecture_video.xmind textbook_chapter.opml --title "Neural Nets" --out combined.xmind
+```
+
+Useful for combining a video map and a PDF map on the same topic without
+paying for either one again. Each file's own relationships are kept (XMind
+inputs only — OPML never carried any to begin with, so there's nothing to
+lose there).
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--title` | `Merged Map` | Title for the combined map's root |
+| `--format`, `-f` | `xmind` if any input has relationships, else `opml` | `opml` \| `xmind` |
+| `--out`, `-o` / `--preview` / `--yes` | *(same as `map`)* | |
+
 ### `cerebro cache stats` / `cerebro cache clear`
 
 Inspect or wipe the response cache — see [Caching](#caching).
