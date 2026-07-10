@@ -11,6 +11,8 @@ construction time — is enough to disable color everywhere.
 
 from __future__ import annotations
 
+import sys
+
 from rich.console import Console
 from rich.theme import Theme
 
@@ -42,3 +44,20 @@ def set_ascii(enabled: bool) -> None:
 
 def ascii_mode() -> bool:
     return _ascii_mode
+
+
+def has_real_console() -> bool:
+    """Whether stdin/stdout are a real attached terminal.
+
+    Guards any prompt that behaves badly on piped/redirected input — most
+    importantly a password-masked prompt (Rich's password=True ultimately
+    calls Python's getpass, which on Windows reads the console device
+    directly via msvcrt and hangs indefinitely rather than reading from a
+    redirected stdin, instead of raising or falling back). Also used by the
+    wizard to decide between questionary's arrow-key menus and a plain
+    Rich fallback.
+    """
+    try:
+        return sys.stdin.isatty() and sys.stdout.isatty()
+    except Exception:
+        return False

@@ -30,7 +30,7 @@ from rich.table import Table
 from . import __version__
 from .batch import BatchItem, dry_run_batch, forget_batch_snapshot, list_batch_snapshots, run_batch
 from .cache import Cache
-from .console import console, set_ascii, set_high_contrast
+from .console import console, has_real_console, set_ascii, set_high_contrast
 from .convert import write_opml, write_xmind
 from .doctor import has_failures, run_diagnostics
 from .foldermap import (
@@ -44,8 +44,8 @@ from .ingest import load_transcript
 from .ingest.folder import discover_course_sources
 from .ingest.playlist import is_playlist_url, load_playlist
 from .llm.base import LLMError
-from .llm.config import ConfigError, load_env, resolve_provider
-from .paths import CONFIG_DIR, ensure_output_dir, load_config, save_config
+from .llm.config import ConfigError, load_env, read_env_file, resolve_provider, write_env_file
+from .paths import CONFIG_DIR, GLOBAL_ENV_PATH, ensure_output_dir, load_config, save_config
 from .structure import HeuristicStructurer
 from .structure.llm import LLMStructurer, link_relationships
 from .ui import print_banner, print_preview
@@ -588,6 +588,53 @@ def _do_tree(
         console.print()
 
     _export(mm, fmt, out, "structure", time.perf_counter() - t0, yes=yes)
+
+
+@app.command()
+def setup():
+    """Guided setup for API keys — writes ~/.cerebro/.env, no manual editing required.
+
+    Press Enter to skip a key (e.g. to use only one engine, or to stick with
+    the fully offline heuristic engine, which needs no key at all). Leaving a
+    key blank keeps whatever was already saved for it, if anything.
+    """
+    from rich.prompt import Prompt
+
+    console.print(
+        "[dim]Free keys: Groq -> https://console.groq.com/keys  ·  "
+        "Gemini -> https://aistudio.google.com/apikey[/]\n"
+    )
+
+    existing = read_env_file(GLOBAL_ENV_PATH)
+    # password=True routes through Python's getpass, which on Windows reads
+    # the console device directly and hangs indefinitely on piped/redirected
+    # stdin instead of raising or falling back — mask only when there's a
+    # real attached terminal to mask against.
+    mask = has_real_console()
+    if not mask:
+        console.print("[yellow]![/] No interactive terminal detected — input will be visible, not masked.\n")
+
+    def _ask_key(name: str, label: str) -> None:
+        already_set = bool(existing.get(name))
+        hint = "already set — Enter to keep" if already_set else "Enter to skip"
+        value = Prompt.ask(f"{label} API key [dim]({hint})[/]", password=mask, default="", show_default=False)
+        value = value.strip()
+        if value:
+            existing[name] = value
+
+    _ask_key("GROQ_API_KEY", "Groq")
+    _ask_key("GEMINI_API_KEY", "Gemini")
+
+    if not existing:
+        console.print(
+            "\n[dim]No keys saved. You can still use --engine heuristic "
+            "(fully offline, no key needed) any time.[/]"
+        )
+        raise typer.Exit()
+
+    write_env_file(GLOBAL_ENV_PATH, existing)
+    console.print(f"\n[green]✓[/] Saved to {GLOBAL_ENV_PATH}")
+    console.print("[dim]Run `cerebro doctor` to verify.[/]")
 
 
 _STATUS_STYLE = {"ok": ("[green]✓[/]", "green"), "warn": ("[yellow]![/]", "yellow"), "fail": ("[red]✗[/]", "red")}

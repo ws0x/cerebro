@@ -18,6 +18,38 @@ class ConfigError(RuntimeError):
     pass
 
 
+def read_env_file(path: str | Path) -> dict[str, str]:
+    """Parse a .env file into a dict. Returns {} if it doesn't exist."""
+    path = Path(path)
+    data: dict[str, str] = {}
+    if not path.exists():
+        return data
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        data[key.strip()] = value.strip().strip('"').strip("'")
+    return data
+
+
+def write_env_file(path: str | Path, data: dict[str, str]) -> None:
+    """Write ``data`` as a .env file, one KEY=value per line. Overwrites
+    whatever was there — callers that want to preserve existing keys should
+    read_env_file() first and merge, which is exactly what `cerebro setup`
+    does so a blank answer for one key doesn't erase an already-saved other.
+
+    ``newline="\\n"`` pins the line ending explicitly — Path.write_text()'s
+    default text-mode writing silently translates every "\\n" to "\\r\\n" on
+    Windows, which would otherwise flip an existing LF .env to CRLF on the
+    very first `cerebro setup` run for no functional reason.
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = [f"{key}={value}" for key, value in data.items()]
+    path.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8", newline="\n")
+
+
 def load_env(*extra_paths: str | Path) -> None:
     """Minimal .env loader (no dependency). Only sets vars not already set.
 
@@ -30,12 +62,7 @@ def load_env(*extra_paths: str | Path) -> None:
     for path in candidates:
         if not path or not Path(path).exists():
             continue
-        for line in Path(path).read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, _, value = line.partition("=")
-            key, value = key.strip(), value.strip().strip('"').strip("'")
+        for key, value in read_env_file(path).items():
             os.environ.setdefault(key, value)
 
 

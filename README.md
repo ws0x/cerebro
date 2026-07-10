@@ -464,6 +464,18 @@ Pass `--fresh` to ignore any previous map and rebuild everything from
 scratch (a new snapshot is still saved afterward, so the *next* run can go
 back to being incremental).
 
+## Guided key setup (`cerebro setup`)
+
+```bash
+cerebro setup
+```
+
+Prompts for your Groq/Gemini API keys and writes `~/.cerebro/.env` —
+replaces hand-editing that file as the only way to configure a key. Enter
+skips a key (e.g. to use only one engine, or to stick with the fully
+offline heuristic engine); leaving one blank keeps whatever was already
+saved for it. Input is masked when run in a real terminal.
+
 ## Persisted defaults (`cerebro config`)
 
 ```bash

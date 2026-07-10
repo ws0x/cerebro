@@ -16,7 +16,6 @@ crash the wizard; at worst it gets less pretty.
 from __future__ import annotations
 
 import re
-import sys
 from pathlib import Path
 from typing import Callable
 
@@ -28,7 +27,7 @@ from rich.prompt import Prompt
 from rich.rule import Rule
 from rich.table import Table
 
-from .console import console
+from .console import console, has_real_console
 from .ingest import looks_like_youtube
 from .ingest.playlist import is_playlist_url
 from .paths import ensure_output_dir, load_config, save_config
@@ -61,13 +60,6 @@ def _cancel() -> None:
     raise typer.Exit()
 
 
-def _has_real_console() -> bool:
-    try:
-        return sys.stdin.isatty() and sys.stdout.isatty()
-    except Exception:
-        return False
-
-
 # Printed right before each individual prompt, not once at the wizard's
 # start — a hint that scrolled off-screen three steps ago doesn't help
 # anyone. The two variants match what's actually available in each backend:
@@ -79,7 +71,7 @@ _HINT_FALLBACK = "[dim]Ctrl+C to cancel[/]"
 
 
 def _ask_text(message: str, default: str | None = None) -> str:
-    if _has_real_console():
+    if has_real_console():
         try:
             console.print(_HINT_TEXT)
             result = questionary.text(message, default=default or "", style=_QSTYLE).ask()
@@ -96,7 +88,7 @@ def _ask_text(message: str, default: str | None = None) -> str:
 
 
 def _select(message: str, choices: list[Choice], default: str | None = None) -> str:
-    if _has_real_console():
+    if has_real_console():
         try:
             console.print(_HINT_SELECT)
             result = questionary.select(message, choices=choices, default=default, style=_QSTYLE).ask()
