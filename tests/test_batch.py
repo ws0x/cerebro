@@ -1,4 +1,4 @@
-from cerebro.batch import BatchItem, forget_batch_snapshot, list_batch_snapshots, run_batch
+from cerebro.batch import BatchItem, dry_run_batch, forget_batch_snapshot, list_batch_snapshots, run_batch
 from cerebro.ir import NodeType
 from cerebro.structure import HeuristicStructurer
 
@@ -214,3 +214,41 @@ def test_list_batch_snapshots_reports_source_and_item_count(tmp_path, tmp_path_f
     assert snaps[0]["source"] == "course://demo"
     assert snaps[0]["items"] == 2
     assert snaps[0]["built_at"] != "?"
+
+
+# --- dry_run_batch -----------------------------------------------------------
+
+
+def test_dry_run_first_ever_run_reports_everything_new(tmp_path, tmp_path_factory):
+    items = _lesson_files(tmp_path, [("A", "..."), ("B", "...")])
+    snap_dir = tmp_path_factory.mktemp("snap")
+    reused, new = dry_run_batch(items, "full", "course://demo", snapshot_dir=snap_dir)
+    assert reused == []
+    assert set(new) == {"A", "B"}
+
+
+def test_dry_run_after_a_real_run_reports_reused_and_new_correctly(tmp_path, tmp_path_factory):
+    items = _lesson_files(tmp_path, [("A", "..."), ("B", "...")])
+    snap_dir = tmp_path_factory.mktemp("snap")
+    run_batch(items, lambda: HeuristicStructurer(), level="full", title="Course",
+              batch_source="course://demo", snapshot_dir=snap_dir)
+
+    items_with_new = items + _lesson_files(tmp_path, [("C", "...")])
+    reused, new = dry_run_batch(items_with_new, "full", "course://demo", snapshot_dir=snap_dir)
+    assert set(reused) == {"A", "B"}
+    assert new == ["C"]
+
+
+def test_dry_run_does_not_touch_the_snapshot_file(tmp_path, tmp_path_factory):
+    items = _lesson_files(tmp_path, [("A", "...")])
+    snap_dir = tmp_path_factory.mktemp("snap")
+    dry_run_batch(items, "full", "course://demo", snapshot_dir=snap_dir)
+    assert list(snap_dir.glob("*.json")) == []  # no snapshot created just from a dry run
+
+
+def test_dry_run_with_no_batch_source_reports_everything_new(tmp_path, tmp_path_factory):
+    items = _lesson_files(tmp_path, [("A", "...")])
+    snap_dir = tmp_path_factory.mktemp("snap")
+    reused, new = dry_run_batch(items, "full", None, snapshot_dir=snap_dir)
+    assert reused == []
+    assert new == ["A"]

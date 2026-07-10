@@ -28,7 +28,7 @@ from rich.progress import Progress as RichProgress
 from rich.table import Table
 
 from . import __version__
-from .batch import BatchItem, forget_batch_snapshot, list_batch_snapshots, run_batch
+from .batch import BatchItem, dry_run_batch, forget_batch_snapshot, list_batch_snapshots, run_batch
 from .cache import Cache
 from .console import console, set_ascii, set_high_contrast
 from .convert import write_opml, write_xmind
@@ -282,6 +282,9 @@ def batch(
     whisper_model: str = typer.Option(None, "--whisper-model", help="Whisper model size to use for local video transcription."),
     relationship_limit: int = typer.Option(None, "--relationship-limit", "--rel-limit", help="Max number of relationships to detect in expert mode."),
     yes: bool = typer.Option(False, "--yes", "-y", help="Overwrite an existing output file without asking."),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show what would be reused vs. freshly processed, without spending any API calls or writing output."
+    ),
 ):
     """Build one combined mind map from a YouTube playlist or a local course folder.
 
@@ -290,7 +293,7 @@ def batch(
     transcript refetch, no restructuring) — only genuinely new items are
     processed. Use --fresh to ignore that history and reprocess everything.
     """
-    _do_batch(source, level, fmt, out, engine, workers, limit, fresh, no_cache, preview, whisper_model, relationship_limit, yes)
+    _do_batch(source, level, fmt, out, engine, workers, limit, fresh, no_cache, preview, whisper_model, relationship_limit, yes, dry_run)
 
 
 def _do_batch(
@@ -307,6 +310,7 @@ def _do_batch(
     whisper_model: str | None = None,
     relationship_limit: int | None = None,
     yes: bool = False,
+    dry_run: bool = False,
 ) -> None:
     config = load_config()
     level = level or config.get("level") or "full"
@@ -354,6 +358,15 @@ def _do_batch(
             f"[dim]  {transcribe_count} video(s) have no subtitle file — will extract an "
             "embedded track or transcribe with Whisper (slower).[/]"
         )
+
+    if dry_run:
+        reused, new = dry_run_batch(items, level, source if not fresh else None)
+        console.print(f"[cyan]Dry run:[/] would reuse [bold]{len(reused)}[/], process [bold]{len(new)}[/] fresh.")
+        if new:
+            console.print("[dim]  New/changed:[/]")
+            for label in new:
+                console.print(f"[dim]    • {label}[/]")
+        raise typer.Exit()
 
     try:
         provider = resolve_provider(engine)
@@ -457,6 +470,9 @@ def tree(
     no_cache: bool = typer.Option(False, "--no-cache", help="Disable the AI-label response cache."),
     preview: bool = typer.Option(True, "--preview/--no-preview", help="Show the map in-terminal."),
     yes: bool = typer.Option(False, "--yes", "-y", help="Overwrite an existing output file without asking."),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show what would change, without AI-labeling anything or writing output."
+    ),
 ):
     """Map a folder's directory structure — not a video or course folder.
 
@@ -465,7 +481,7 @@ def tree(
     exact folder instead of being rewalked and relabeled. Use --fresh to
     ignore that history and rebuild everything.
     """
-    _do_tree(path, fmt, out, engine, max_depth, max_files, not no_gitignore, fresh, no_cache, preview, yes)
+    _do_tree(path, fmt, out, engine, max_depth, max_files, not no_gitignore, fresh, no_cache, preview, yes, dry_run)
 
 
 def _do_tree(
@@ -480,6 +496,7 @@ def _do_tree(
     no_cache: bool,
     preview: bool,
     yes: bool = False,
+    dry_run: bool = False,
 ) -> None:
     config = load_config()
     fmt = fmt or config.get("format") or "opml"
@@ -514,6 +531,16 @@ def _do_tree(
         console.print(
             f"[dim]  ↻ Reused {len(diff.reused)}/{diff.total} folder(s) since {since} — {change_desc}.[/]"
         )
+
+    if dry_run:
+        if engine == "heuristic":
+            console.print("[cyan]Dry run:[/] heuristic engine — no AI labeling; nothing written.")
+        else:
+            console.print(
+                f"[cyan]Dry run:[/] would AI-label [bold]{len(nodes_needing_labels)}[/] folder(s) "
+                f"with [bold]{engine}[/]; nothing written."
+            )
+        raise typer.Exit()
 
     try:
         provider = resolve_provider(engine)

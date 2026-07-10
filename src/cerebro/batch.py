@@ -67,6 +67,23 @@ class BatchDiff:
         return len(self.reused) + len(self.added)
 
 
+def dry_run_batch(
+    items: list[BatchItem], level: str, batch_source: str | None, snapshot_dir: str | Path | None = None
+) -> tuple[list[str], list[str]]:
+    """Returns ``(reused_labels, new_labels)`` for ``items`` without doing any
+    work — no transcript fetch, no LLM call, nothing written. Just answers
+    "what would run_batch do" by reading the same snapshot run_batch would."""
+    snapshot_dir = Path(snapshot_dir) if snapshot_dir is not None else BATCH_SNAPSHOT_DIR
+    old_items: dict[str, dict] = {}
+    if batch_source:
+        snapshot = _load_batch_snapshot(batch_source, {"level": level}, snapshot_dir)
+        if snapshot is not None:
+            old_items = snapshot["items"]
+    reused = [item.label for item in items if item.source in old_items]
+    new = [item.label for item in items if item.source not in old_items]
+    return reused, new
+
+
 def _batch_snapshot_path(batch_source: str, snapshot_dir: Path) -> Path:
     key = hashlib.sha256(batch_source.encode("utf-8")).hexdigest()[:24]
     return snapshot_dir / f"{key}.json"
