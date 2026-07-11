@@ -142,12 +142,19 @@ def _enrich_leaves(
     level: str,
     on_event: Callable[..., None],
     max_workers: int = 6,
-) -> None:
+) -> bool:
+    """Returns True unless enrichment was attempted for at least one leaf and
+    every single call failed. The caller needs this: each leaf's fallback
+    note (the deterministic snippet) makes a total failure look exactly like
+    a normal map to anything just counting nodes, which would otherwise get
+    reported (and persisted to the manifest / --json output, or counted as a
+    batch success) as if the requested LLM engine had actually built it."""
     todo = [(node, text) for node, _page, text in leaf_sections if text.strip()]
     if not todo:
-        return
+        return True  # nothing to enrich isn't a failure
     on_event("map_start", total=len(todo))
     done = 0
+    any_succeeded = False
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         futures = {
             pool.submit(_enrich_one, node, text, provider, cache, level): node for node, text in todo
@@ -155,10 +162,12 @@ def _enrich_leaves(
         for fut in as_completed(futures):
             try:
                 fut.result()
+                any_succeeded = True
             except LLMError as exc:
                 on_event("map_error", error=str(exc))
             done += 1
             on_event("map_progress", done=done, total=len(todo))
+    return any_succeeded
 
 
 def build_outline_map(
@@ -175,9 +184,14 @@ def build_outline_map(
     "shallow, minimal-nesting" spirit) -- enrich every leaf section's note
     into an LLM-extracted summary plus child key points, and at expert level
     detect cross-section relationships via the existing, unchanged
-    ``link_relationships``. A failed leaf enrichment call is skipped, not
-    fatal, leaving that leaf's deterministic skeleton note in place -- same
-    resilience as the video pipeline's MAP stage."""
+    ``link_relationships``. A single failed leaf enrichment call is skipped,
+    not fatal, leaving that leaf's deterministic skeleton note in place --
+    same resilience as the video pipeline's MAP stage. But if EVERY leaf call
+    fails (e.g. total rate-limiting), this raises LLMError rather than
+    silently returning what is actually a 100%-fallback map -- the caller
+    (cli.py's _structure_document, or batch's OutlineAwareStructurer via
+    run_batch's existing per-item exception handling) needs to know so it
+    doesn't report/persist a heuristic-only result as an AI-engine success."""
     on_event = on_event or (lambda *a, **k: None)
 
     if provider is None or level == "brief":
@@ -193,7 +207,9 @@ def build_outline_map(
     # success; a leaf whose enrichment call fails keeps this instead of
     # being left blank.
     _apply_fallback_notes(leaf_sections)
-    _enrich_leaves(leaf_sections, provider, cache, level, on_event, max_workers=max_workers)
+    any_succeeded = _enrich_leaves(leaf_sections, provider, cache, level, on_event, max_workers=max_workers)
+    if not any_succeeded:
+        raise LLMError("All section-enrichment calls failed; cannot build a map.")
 
     if level == "expert":
         link_relationships(

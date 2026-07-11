@@ -148,6 +148,38 @@ def test_batch_item_with_a_real_pdf_outline_keeps_its_hierarchy_not_flattened(tm
     assert [c.title for c in slides_branch.children] == ["Chapter One", "Chapter Two"]
 
 
+def test_batch_pdf_item_with_total_ai_failure_is_reported_as_a_real_failure(tmp_path):
+    # Found via a real Groq-vs-Gemini comparison: OutlineAwareStructurer routes
+    # a PDF/article item through build_outline_map, which used to silently
+    # return a 100%-fallback map when every leaf's LLM call failed -- counted
+    # as a genuine success in the batch summary, unlike a video item hitting
+    # the same total failure (which run_batch already reports honestly via
+    # its existing per-item exception handling). build_outline_map now raises
+    # on total failure, so this item must show up as a real, named failure
+    # exactly like the video path already does, not silently succeed.
+    from cerebro.llm.base import LLMError
+    from cerebro.llm.providers import MockProvider
+
+    class AlwaysFailsProvider(MockProvider):
+        def complete_json(self, system, user):
+            raise LLMError("boom")
+
+    pdf = _build_pdf_with_toc(tmp_path)
+    items = [BatchItem("Slides", str(pdf))]
+    combined, outcomes, _diff = run_batch(
+        items,
+        lambda: OutlineAwareStructurer(AlwaysFailsProvider(), Cache(enabled=False)),
+        level="full",
+        title="Course",
+    )
+
+    assert outcomes[0].error is not None
+    assert "All section-enrichment calls failed" in outcomes[0].error
+    # no fake-success "Slides" branch was merged in -- only the standard
+    # all-failed placeholder, same as any other fully-failed batch item
+    assert all(c.title != "Slides" for c in combined.root.children)
+
+
 def test_batch_all_fail_yields_placeholder_not_crash(tmp_path):
     items = [BatchItem("Missing", str(tmp_path / "nope.txt"))]
     combined, outcomes, diff = run_batch(items, lambda: HeuristicStructurer(), level="full", title="Course")

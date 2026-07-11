@@ -139,6 +139,26 @@ def test_build_outline_map_skips_failed_leaf_without_failing_whole_map():
     assert [c.title for c in ch2.children] == ["Supporting point one", "Supporting point two"]
 
 
+def test_build_outline_map_raises_when_every_leaf_enrichment_fails():
+    # Found via a real Groq-vs-Gemini comparison: when EVERY leaf's LLM call
+    # fails (e.g. total rate-limiting), the old behavior silently returned a
+    # 100%-fallback map that looked like a normal successful result to any
+    # caller just counting nodes -- misreported as an AI-engine success by
+    # cli.py (and, for cerebro batch, counted as a genuine item success
+    # instead of the honestly-reported failure a video item would get).
+    from cerebro.llm.base import LLMError
+
+    import pytest
+
+    class AlwaysFailsProvider(MockProvider):
+        def complete_json(self, system, user):
+            raise LLMError("boom")
+
+    transcript = _two_chapter_transcript()
+    with pytest.raises(LLMError, match="All section-enrichment calls failed"):
+        build_outline_map(transcript, provider=AlwaysFailsProvider(), cache=Cache(enabled=False), level="full")
+
+
 def test_section_boundary_uses_flat_document_order_not_nesting():
     # Chapter 2 starts on page 3; Section 1.2 (page 2) must stop before it
     # even though they're at different nesting depths.

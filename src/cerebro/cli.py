@@ -145,10 +145,9 @@ def _structure(transcript, level, provider, cache, relationship_limit=8) -> tupl
         # A source with real, pre-existing structure (currently: PDFs with a
         # TOC/detected headings) -- the hierarchy is already known, so this
         # skips reduce entirely rather than asking an LLM to reinvent it.
-        # build_outline_map handles LLM failures per-leaf internally (keeps
-        # the deterministic snippet on failure) rather than a full swap, so
-        # this is never a total heuristic fallback the way the branch below is.
-        return _structure_document(transcript, level, provider, cache, relationship_limit), False
+        # _structure_document has its own (map, used_fallback) contract, same
+        # shape as this function, so it's returned straight through.
+        return _structure_document(transcript, level, provider, cache, relationship_limit)
 
     if provider is None:
         with _spinner(f"Structuring ({level})…"):
@@ -189,15 +188,17 @@ def _structure(transcript, level, provider, cache, relationship_limit=8) -> tupl
         return mm, False
 
 
-def _structure_document(transcript, level, provider, cache, relationship_limit=8):
+def _structure_document(transcript, level, provider, cache, relationship_limit=8) -> tuple:
     """Outline-bearing source path (see structure/document.py): the hierarchy
     is already known, so the LLM (if any) only enriches section content and,
-    at expert level, detects cross-section relationships. Per-leaf and link
-    failures are already handled internally there (the deterministic skeleton
-    note is kept on failure), so no top-level fallback is needed here."""
+    at expert level, detects cross-section relationships. A single failed
+    leaf/link call is handled internally there (the deterministic skeleton
+    note is kept on failure) -- but if EVERY leaf call fails, build_outline_map
+    raises, and this catches it the same way _structure()'s generic path does.
+    Returns (map, used_heuristic_fallback), same contract as _structure()."""
     if provider is None:
         with _spinner(f"Structuring ({level})…"):
-            return build_outline_skeleton(transcript, level=level)
+            return build_outline_skeleton(transcript, level=level), False
 
     with RichProgress(
         SpinnerColumn(),
@@ -219,16 +220,21 @@ def _structure_document(transcript, level, provider, cache, relationship_limit=8
             elif kind == "link_start":
                 progress.update(task, description="Detecting cross-links", total=1, completed=0)
 
-        mm = build_outline_map(
-            transcript,
-            provider,
-            cache,
-            level=level,
-            on_event=on_event,
-            relationship_limit=relationship_limit,
-        )
+        try:
+            mm = build_outline_map(
+                transcript,
+                provider,
+                cache,
+                level=level,
+                on_event=on_event,
+                relationship_limit=relationship_limit,
+            )
+        except LLMError as exc:
+            progress.stop()
+            console.print(f"[yellow]! LLM engine failed ({exc}); falling back to heuristic.[/]")
+            return build_outline_skeleton(transcript, level=level), True
         progress.update(task, completed=progress.tasks[0].total)
-        return mm
+        return mm, False
 
 
 def _version_callback(value: bool):

@@ -5,11 +5,11 @@ the persisted manifest, and --json output) misattributes a heuristic-only map
 to the LLM engine that actually failed."""
 
 from cerebro.cache import Cache
-from cerebro.cli import _structure
+from cerebro.cli import _structure, _structure_document
 from cerebro.ir import NodeType
 from cerebro.llm.base import LLMError
 from cerebro.llm.providers import MockProvider
-from cerebro.transcript import Segment, Transcript
+from cerebro.transcript import OutlineEntry, Segment, Transcript
 
 
 class _AlwaysFailProvider:
@@ -51,3 +51,31 @@ def test_no_provider_at_all_reports_no_fallback():
     mm, used_fallback = _structure(_transcript(), "full", None, cache=Cache(enabled=False))
     assert used_fallback is False
     assert mm.root.children
+
+
+def _outline_transcript():
+    # An outline-bearing source (PDF/article) routes through the separate
+    # _structure_document path, which has its own (map, used_fallback)
+    # contract -- must be tested independently of the generic path above.
+    return Transcript(
+        source="doc.pdf",
+        title="Doc",
+        segments=[Segment(text="Chapter one body text here.", start=0.0), Segment(text="Chapter two body text here.", start=1.0)],
+        outline=[OutlineEntry(1, "Chapter One", 0), OutlineEntry(1, "Chapter Two", 1)],
+    )
+
+
+def test_outline_path_total_llm_failure_reports_the_fallback_flag():
+    mm, used_fallback = _structure_document(_outline_transcript(), "full", _AlwaysFailProvider(), cache=Cache(enabled=False))
+    assert used_fallback is True
+    assert [c.title for c in mm.root.children] == ["Chapter One", "Chapter Two"]  # skeleton, not blank
+
+
+def test_outline_path_successful_llm_run_reports_no_fallback():
+    mm, used_fallback = _structure_document(_outline_transcript(), "full", MockProvider(), cache=Cache(enabled=False))
+    assert used_fallback is False
+
+
+def test_outline_path_no_provider_reports_no_fallback():
+    mm, used_fallback = _structure_document(_outline_transcript(), "full", None, cache=Cache(enabled=False))
+    assert used_fallback is False
