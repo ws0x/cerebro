@@ -377,7 +377,10 @@ def build_folder_map(
     spec = _load_gitignore_spec(root) if respect_gitignore else None
     root_node, _root_sig = _build_node(root, root, spec, max_depth, max_files, depth=0, ctx=ctx)
     root_node.type = NodeType.root
-    mm = MindMap(title=root.name or str(root), root=root_node, source=str(root), level="full")
+    # "structure" (not "full") -- a folder-structure map isn't a content depth
+    # level at all, and this also doubles as the signal convert/xmind.py uses
+    # to pick the tree-specific visual theme over the video/document one.
+    mm = MindMap(title=root.name or str(root), root=root_node, source=str(root), level="structure")
 
     deleted = sorted(set(ctx.old_signatures) - set(ctx.new_signatures))
     pending = PendingSnapshot(

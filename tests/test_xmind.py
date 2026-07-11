@@ -11,6 +11,9 @@ from cerebro.ir import MindMap, Node, NodeType, Relationship
 _REFERENCE_TEMPLATE = (
     Path(__file__).resolve().parent.parent / "examples" / "xmind_theme_template" / "DEFAULT_MAP_TEMPLATE.xmind"
 )
+_TREE_REFERENCE_TEMPLATE = (
+    Path(__file__).resolve().parent.parent / "examples" / "xmind_theme_template" / "TREE_MAP_TEMPLATE.xmind"
+)
 
 
 def _map():
@@ -167,3 +170,53 @@ def test_href_round_trips_through_write_and_real_zip_read(tmp_path):
     with zipfile.ZipFile(path) as z:
         content = json.loads(z.read("content.json"))
     assert content[0]["rootTopic"]["href"] == "https://youtu.be/abc123"
+
+
+def _tree_map():
+    root = Node(title="my_project", type=NodeType.root)
+    root.add("src", type=NodeType.topic)
+    root.add("tests", type=NodeType.topic)
+    return MindMap(title="my_project", root=root, level="structure")
+
+
+def test_a_structure_level_map_gets_the_tree_theme_not_the_video_theme():
+    sheet = mindmap_to_xmind_content(_tree_map())[0]
+    assert sheet["theme"]["colorThemeId"] == "Hawaii-#FFFFFF-MULTI_LINE_COLORS"
+    assert sheet["rootTopic"]["structureClass"] == "org.xmind.ui.logic.right"
+    assert sheet["extensions"] == [
+        {
+            "provider": "org.xmind.ui.skeleton.structure.style",
+            "content": {"centralTopic": "org.xmind.ui.logic.right"},
+        }
+    ]
+
+
+def test_a_non_structure_map_still_gets_the_video_theme():
+    sheet = mindmap_to_xmind_content(_map())[0]  # _map() uses the default level ("full")
+    assert sheet["theme"]["colorThemeId"] == "Dawn-#ffffff-MULTI_LINE_COLORS"
+    assert sheet["rootTopic"]["structureClass"] == "org.xmind.ui.map.clockwise"
+
+
+@pytest.mark.parametrize("level", ["brief", "full", "expert", "merged"])
+def test_only_the_literal_structure_level_gets_the_tree_theme(level):
+    root = Node(title="X", type=NodeType.root)
+    mm = MindMap(title="X", root=root, level=level)
+    sheet = mindmap_to_xmind_content(mm)[0]
+    assert sheet["theme"]["colorThemeId"] == "Dawn-#ffffff-MULTI_LINE_COLORS"
+
+
+@pytest.mark.skipif(not _TREE_REFERENCE_TEMPLATE.exists(), reason="tree reference template backup not present")
+def test_tree_theme_is_byte_identical_to_the_preserved_reference_template():
+    with zipfile.ZipFile(_TREE_REFERENCE_TEMPLATE) as z:
+        reference_content = json.loads(z.read("content.json"))
+    reference_theme = reference_content[0]["theme"]
+
+    sheet = mindmap_to_xmind_content(_tree_map())[0]
+    assert sheet["theme"] == reference_theme
+
+
+def test_tree_theme_round_trips_through_a_real_zip_write_and_read(tmp_path):
+    path = write_xmind(_tree_map(), tmp_path / "tree.xmind")
+    with zipfile.ZipFile(path) as z:
+        content = json.loads(z.read("content.json"))
+    assert content[0]["theme"]["colorThemeId"] == "Hawaii-#FFFFFF-MULTI_LINE_COLORS"

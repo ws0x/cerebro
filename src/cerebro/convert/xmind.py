@@ -336,6 +336,245 @@ _THEME = {
     "colorThemeId": "Dawn-#ffffff-MULTI_LINE_COLORS",
 }
 
+# -- Folder-structure (cerebro tree) theme ----------------------------------
+# A folder tree is a different kind of map from a video/PDF/article content
+# map -- there's no narrative to follow, no depth-of-understanding levels,
+# just a hierarchy to scan -- so it gets its own visual identity rather than
+# reusing the content theme by default. Copied verbatim from a second
+# hand-picked reference map (examples/xmind_theme_template/TREE_MAP_TEMPLATE.xmind),
+# a real XMind Zen "Hawaii" theme: a right-hand logic-chart layout (reads
+# top-to-bottom/left-to-right like an org chart, not radially outward) suited
+# to a directory tree's own shape, cooler blue/teal/amber palette, distinct
+# from the content theme's warm "Dawn" palette so the two are visually
+# distinguishable from across a room. Selected automatically by
+# mindmap_to_xmind_content() when mm.level == "structure" (what
+# foldermap.py's build_folder_map() sets) -- no caller has to ask for it.
+_TREE_STRUCTURE_CLASS = "org.xmind.ui.logic.right"
+
+_TREE_EXTENSIONS = [
+    {
+        "provider": "org.xmind.ui.skeleton.structure.style",
+        "content": {"centralTopic": _TREE_STRUCTURE_CLASS},
+    }
+]
+
+_TREE_THEME = {
+    "map": {
+        "id": "02053fa0-1f4b-4859-abb1-e2358d5020f9",
+        "properties": {
+            "svg:fill": "#FFFFFF",
+            "multi-line-colors": "#B7D6E8 #4A94C3 #4B9383 #D29F55",
+            "color-list": "#B7D6E8 #4A94C3 #254B85 #4B9383 #D29F55 #F3E6CF",
+            "line-tapered": "none",
+        },
+    },
+    "centralTopic": {
+        "id": "7d2e2606-7335-4fd6-a701-f4a1e0ccac42",
+        "properties": {
+            "fo:font-family": "NeverMind",
+            "fo:font-size": "28pt",
+            "fo:font-weight": "600",
+            "fo:font-style": "normal",
+            "fo:color": "inherited",
+            "fo:text-transform": "manual",
+            "fo:text-decoration": "none",
+            "fo:text-align": "center",
+            "svg:fill": "#254B85",
+            "fill-pattern": "solid",
+            "line-width": "2pt",
+            "line-color": "#254B85",
+            "line-pattern": "solid",
+            "border-line-color": "inherited",
+            "border-line-width": "0pt",
+            "border-line-pattern": "inherited",
+            "shape-class": "org.xmind.topicShape.roundedRect",
+            "line-class": "org.xmind.branchConnection.roundedfold",
+            "arrow-end-class": "org.xmind.arrowShape.none",
+            "alignment-by-level": "actived",
+        },
+    },
+    "mainTopic": {
+        "id": "97823c85-446e-46cb-9ffd-af88ef26fffb",
+        "properties": {
+            "fo:font-family": "NeverMind",
+            "fo:font-size": "18pt",
+            "fo:font-weight": "600",
+            "fo:font-style": "normal",
+            "fo:color": "inherited",
+            "fo:text-transform": "manual",
+            "fo:text-decoration": "none",
+            "fo:text-align": "left",
+            "svg:fill": "inherited",
+            "fill-pattern": "solid",
+            "line-width": "inherited",
+            "line-color": "inherited",
+            "line-pattern": "inherited",
+            "border-line-color": "inherited",
+            "border-line-width": "0pt",
+            "border-line-pattern": "inherited",
+            "shape-class": "org.xmind.topicShape.roundedRect",
+            "line-class": "org.xmind.branchConnection.roundedElbow",
+            "arrow-end-class": "inherited",
+        },
+    },
+    "subTopic": {
+        "id": "fb8cd5ed-f375-490f-999e-1cd075ffebb2",
+        "properties": {
+            "fo:font-family": "NeverMind",
+            "fo:font-size": "14pt",
+            "fo:font-weight": "400",
+            "fo:font-style": "normal",
+            "fo:color": "inherited",
+            "fo:text-transform": "manual",
+            "fo:text-decoration": "none",
+            "fo:text-align": "left",
+            "svg:fill": "inherited",
+            "fill-pattern": "solid",
+            "line-width": "inherited",
+            "line-color": "inherited",
+            "line-pattern": "inherited",
+            "border-line-color": "inherited",
+            "border-line-width": "0pt",
+            "border-line-pattern": "inherited",
+            "shape-class": "org.xmind.topicShape.roundedRect",
+            "line-class": "org.xmind.branchConnection.roundedElbow",
+            "arrow-end-class": "inherited",
+        },
+    },
+    "floatingTopic": {
+        "id": "8e2d42b7-6d0f-4d15-a356-158c5ea49b00",
+        "properties": {
+            "fo:font-family": "Montserrat",
+            "fo:font-size": "14pt",
+            "fo:font-weight": "normal",
+            "fo:font-style": "normal",
+            "fo:color": "inherited",
+            "fo:text-transform": "manual",
+            "fo:text-decoration": "none",
+            "fo:text-align": "center",
+            "svg:fill": "#4A94C3",
+            "fill-pattern": "solid",
+            "line-width": "inherited",
+            "line-color": "inherited",
+            "line-pattern": "solid",
+            "border-line-color": "#4A94C3",
+            "border-line-width": "0pt",
+            "border-line-pattern": "inherited",
+            "shape-class": "org.xmind.topicShape.roundedRect",
+            "line-class": "org.xmind.branchConnection.roundedElbow",
+            "arrow-end-class": "org.xmind.arrowShape.none",
+        },
+    },
+    "summaryTopic": {
+        "id": "45c724cf-5f9d-457d-b55b-9f32c101772f",
+        "properties": {
+            "fo:font-family": "Montserrat",
+            "fo:font-size": "14pt",
+            "fo:font-weight": "400",
+            "fo:font-style": "normal",
+            "fo:color": "inherited",
+            "fo:text-transform": "manual",
+            "fo:text-decoration": "none",
+            "fo:text-align": "center",
+            "svg:fill": "#4B9383",
+            "fill-pattern": "none",
+            "line-width": "inherited",
+            "line-color": "inherited",
+            "line-pattern": "inherited",
+            "border-line-color": "#4B9383",
+            "border-line-width": "inherited",
+            "border-line-pattern": "inherited",
+            "shape-class": "org.xmind.topicShape.roundedRect",
+            "line-class": "org.xmind.branchConnection.roundedElbow",
+            "arrow-end-class": "inherited",
+        },
+    },
+    "calloutTopic": {
+        "id": "4e165164-dcb1-4456-b831-5e155a955b72",
+        "properties": {
+            "fo:font-family": "NeverMind",
+            "fo:font-size": "14pt",
+            "fo:font-weight": "600",
+            "fo:font-style": "normal",
+            "fo:color": "inherited",
+            "fo:text-transform": "manual",
+            "fo:text-decoration": "none",
+            "fo:text-align": "left",
+            "svg:fill": "#4B9383",
+            "fill-pattern": "solid",
+            "line-width": "inherited",
+            "line-color": "inherited",
+            "line-pattern": "inherited",
+            "border-line-color": "#4B9383",
+            "border-line-width": "inherited",
+            "border-line-pattern": "inherited",
+            "shape-class": "org.xmind.topicShape.ellipse",
+            "arrow-end-class": "inherited",
+        },
+    },
+    "importantTopic": {
+        "id": "2095e36b-73bd-43a9-91ea-58b16eb1e233",
+        "properties": {"svg:fill": "#794ac3", "fill-pattern": "solid", "border-line-color": "#794ac3"},
+    },
+    "minorTopic": {
+        "id": "0b83e1aa-69df-4a1b-b229-eccb3702fd2a",
+        "properties": {"svg:fill": "#c34ab2", "fill-pattern": "solid", "border-line-color": "#c34ab2"},
+    },
+    "expiredTopic": {
+        "id": "692e289f-1fb4-409e-90ad-d7feef2c5f17",
+        "properties": {"fo:text-decoration": "line-through", "fill-pattern": "none"},
+    },
+    "boundary": {
+        "id": "b8673950-f501-44a5-bb1d-ca8de2434905",
+        "properties": {
+            "fo:font-family": "'NeverMind','Microsoft YaHei','PingFang SC','Microsoft JhengHei','sans-serif',sans-serif",
+            "fo:font-size": "14pt",
+            "fo:font-weight": "600",
+            "fo:font-style": "normal",
+            "fo:color": "inherited",
+            "fo:text-transform": "manual",
+            "fo:text-decoration": "none",
+            "fo:text-align": "center",
+            "svg:fill": "#254B85",
+            "fill-pattern": "solid",
+            "line-width": "2",
+            "line-color": "#254B85",
+            "line-pattern": "dash",
+            "shape-class": "org.xmind.boundaryShape.roundedRect",
+        },
+    },
+    "summary": {
+        "id": "b2f2ff39-56e8-45eb-a204-737f02023097",
+        "properties": {
+            "line-width": "2pt",
+            "line-color": "#254B85",
+            "line-pattern": "solid",
+            "shape-class": "org.xmind.summaryShape.square",
+        },
+    },
+    "relationship": {
+        "id": "9a325766-4c63-4306-9509-ecd066671173",
+        "properties": {
+            "fo:font-family": "'NeverMind','Microsoft YaHei','PingFang SC','Microsoft JhengHei','sans-serif',sans-serif",
+            "fo:font-size": "13pt",
+            "fo:font-weight": "600",
+            "fo:font-style": "normal",
+            "fo:color": "inherited",
+            "fo:text-transform": "manual",
+            "fo:text-decoration": "none",
+            "fo:text-align": "center",
+            "line-width": "2",
+            "line-color": "#254B85",
+            "line-pattern": "dash",
+            "shape-class": "org.xmind.relationshipShape.curved",
+            "arrow-begin-class": "org.xmind.arrowShape.none",
+            "arrow-end-class": "org.xmind.arrowShape.triangle",
+        },
+    },
+    "skeletonThemeId": "a148ee55687bdfc44af2fa5f16",
+    "colorThemeId": "Hawaii-#FFFFFF-MULTI_LINE_COLORS",
+}
+
 
 def _topic(node: Node) -> dict:
     topic: dict = {"id": node.id, "class": "topic", "title": node.title}
@@ -378,8 +617,18 @@ def _source_href(source: str | None) -> str | None:
 
 def mindmap_to_xmind_content(mm: MindMap) -> list:
     """Build the ``content.json`` structure (a list of sheets)."""
+    # A folder-structure map (cerebro tree) gets its own theme/layout rather
+    # than the video/document content theme -- see _TREE_THEME's own comment
+    # for why. mm.level == "structure" is what build_folder_map() sets;
+    # nothing else in cerebro produces that value, so this is an unambiguous,
+    # zero-configuration signal -- no caller has to ask for the tree theme.
+    is_tree = mm.level == "structure"
+    structure_class = _TREE_STRUCTURE_CLASS if is_tree else _STRUCTURE_CLASS
+    extensions = _TREE_EXTENSIONS if is_tree else _EXTENSIONS
+    theme = _TREE_THEME if is_tree else _THEME
+
     root_topic = _topic(mm.root)
-    root_topic["structureClass"] = _STRUCTURE_CLASS
+    root_topic["structureClass"] = structure_class
     href = _source_href(mm.source)
     if href:
         root_topic["href"] = href
@@ -389,8 +638,8 @@ def mindmap_to_xmind_content(mm: MindMap) -> list:
         "class": "sheet",
         "title": mm.title or "Sheet 1",
         "rootTopic": root_topic,
-        "extensions": _EXTENSIONS,
-        "theme": _THEME,
+        "extensions": extensions,
+        "theme": theme,
     }
 
     if mm.relationships:
