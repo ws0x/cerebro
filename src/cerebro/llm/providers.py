@@ -108,4 +108,17 @@ class MockProvider:
             }
         if "TASK: LINK" in system:
             return {"relationships": [{"from": 1, "to": 3, "label": "relates to"}]}
+        if "TASK: HEADINGS" in system:
+            # Return nothing usable, so the enumerated path falls back to its
+            # own deterministic (already title-cased) headings. Polishing is a
+            # live-LLM nicety; the mock exercises the robust fallback instead.
+            return {}
+        if "TASK: SECTION" in system:
+            return {
+                "note": "What the author claims in this section.",
+                "points": [
+                    {"title": "Section key point", "type": "insight"},
+                    {"title": "A concrete example", "type": "example"},
+                ],
+            }
         return {}

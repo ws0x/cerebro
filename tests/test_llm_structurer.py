@@ -70,17 +70,35 @@ def test_link_relationships_works_on_a_hand_built_multi_branch_tree():
     assert user_data[3]["video"] == "Video B"
 
 
-def test_link_relationships_rejects_same_branch_links():
+def test_link_relationships_rejects_parent_child_links():
+    # A node linked to its own child is redundant with the tree edge -> rejected.
     root = Node(title="Course", type=NodeType.root)
-    video_a = root.add("Video A", type=NodeType.topic)
-    video_a.add("Concept One", type=NodeType.concept)
+    branch = root.add("Branch A", type=NodeType.topic)
+    branch.add("Concept One", type=NodeType.concept)
+    branch.add("Concept Two", type=NodeType.concept)  # +1 node so len(nodes) >= 3
     mm = MindMap(title="Course", root=root, level="expert")
 
-    # Propose link from 0 (Video A) to 1 (Concept One), which are in the same branch
-    provider = CustomMockProvider({"relationships": [{"from": 0, "to": 1, "label": "invalid same branch"}]})
+    # 0 (Branch A) -> 1 (Concept One) is parent->child (hierarchical).
+    provider = CustomMockProvider({"relationships": [{"from": 0, "to": 1, "label": "redundant hierarchy"}]})
     link_relationships(mm, provider, Cache(enabled=False))
-
     assert len(mm.relationships) == 0
+
+
+def test_link_relationships_allows_same_branch_sibling_links():
+    # Two sub-points within the same section with a real cause-and-effect IS a
+    # valid non-hierarchical cross-link -- the fix that unblocked enumerated
+    # maps, whose causal claims live inside each numbered section.
+    root = Node(title="7 Tips", type=NodeType.root)
+    section = root.add("1. Keep Promises", type=NodeType.topic)
+    section.add("Keep your word", type=NodeType.concept)   # node 1
+    section.add("Builds confidence", type=NodeType.insight)  # node 2
+    mm = MindMap(title="7 Tips", root=root, level="expert")
+
+    # 1 -> 2 are siblings (same parent, not ancestor/descendant) -> allowed.
+    provider = CustomMockProvider({"relationships": [{"from": 1, "to": 2, "label": "builds"}]})
+    link_relationships(mm, provider, Cache(enabled=False))
+    assert len(mm.relationships) == 1
+    assert mm.relationships[0].label == "builds"
 
 
 def test_link_relationships_discards_duplicates():

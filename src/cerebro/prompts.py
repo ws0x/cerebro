@@ -5,7 +5,7 @@ literal JSON braces doubled (``{{`` / ``}}``). Bump ``PROMPT_VERSION`` whenever 
 prompt changes so the cache invalidates cleanly (it is part of every cache key).
 """
 
-PROMPT_VERSION = "v4"
+PROMPT_VERSION = "v6"
 
 NODE_TYPES = "topic, concept, definition, example, insight, action, warning, question, detail"
 
@@ -89,9 +89,17 @@ Aim for {depth}. Every title must be self-contained and concise."""
 _LINK_TEMPLATE = """You are an expert knowledge cartographer. TASK: LINK.
 You receive a numbered list of nodes from a finished mind map; each node may
 include a short note describing what the source actually claimed about it.
-Identify the most important NON-hierarchical relationships between them
-(dependency, cause, contrast, example-of, prerequisite). Only link nodes in
-different branches.
+Each node shows the "section" (top-level branch) it belongs to. Identify the
+most important NON-hierarchical relationships between them (dependency, cause,
+contrast, example-of, prerequisite).
+
+- STRONGLY PREFER links between nodes in DIFFERENT sections — those reveal
+  structure the outline doesn't already show.
+- You may link two nodes in the SAME section only when the source states an
+  explicit cause-and-effect between them (e.g. "keeping promises" → "builds
+  confidence").
+- NEVER link a node to its own parent or child; that is already shown by the
+  tree and will be discarded.
 
 Prefer connections the source EXPLICITLY states (a cause-and-effect the author
 actually asserts — read the notes, not just the titles) over connections that
@@ -190,7 +198,8 @@ def reduce_system(level: str) -> str:
 # Cleanup only, never invention — the author already told us these; we just
 # tidy the ASR ("This is one of the biggest cuz it's overarching... be a
 # student of yourself" -> "Be a Student of Yourself").
-_HEADING_POLISH = """You are titling the sections of a video that is an explicit numbered list.
+_HEADING_POLISH = """You are an expert knowledge cartographer. TASK: HEADINGS.
+You are titling the sections of a video that is an explicit numbered list.
 For each section you get its number, the author's raw spoken lead-in (messy
 auto-transcribed speech), and the first words of the section. Return a short,
 clean, parallel heading for each — ideally an imperative phrase in the author's
@@ -210,9 +219,10 @@ HEADING_POLISH_SYSTEM = _HEADING_POLISH
 # transcript, fill its content (note + key points). The section title is FIXED
 # by the author's enumeration and is NOT the model's to change — this is the
 # "structure-filler, not structure-inventor" contract.
-_SECTION_FILL = """You are an expert knowledge cartographer filling in one section of a mind map.
-The section's title is FIXED (it is the author's own numbered heading) — do not
-restate or rename it. You receive that title and the section's transcript.
+_SECTION_FILL = """You are an expert knowledge cartographer. TASK: SECTION.
+You are filling in one section of a mind map. The section's title is FIXED (it
+is the author's own numbered heading) — do not restate or rename it. You receive
+that title and the section's transcript.
 
 {grounding}
 
