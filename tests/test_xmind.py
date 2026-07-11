@@ -45,6 +45,17 @@ def test_content_structure_markers_and_relationships():
     assert sheet["relationships"][0]["title"] == "affects"
 
 
+def test_detail_nodes_get_their_own_marker_distinct_from_definition():
+    root = Node(title="Central", type=NodeType.root)
+    root.add("784 input neurons", type=NodeType.detail)
+    root.add("A neuron is a unit that outputs a number", type=NodeType.definition)
+    sheet = mindmap_to_xmind_content(MindMap(title="T", root=root))[0]
+    detail, definition = sheet["rootTopic"]["children"]["attached"]
+    assert detail["markers"] == [{"markerId": "star-orange"}]
+    assert definition["markers"] == [{"markerId": "symbol-info"}]
+    assert detail["markers"] != definition["markers"]
+
+
 def test_written_file_is_a_valid_xmind_zip(tmp_path):
     path = write_xmind(_map(), tmp_path / "out.xmind")
     assert path.exists()

@@ -41,6 +41,7 @@ _MARKER = {
     NodeType.action: "symbol-right",
     NodeType.warning: "symbol-exclam",
     NodeType.question: "symbol-question",
+    NodeType.detail: "star-orange",
 }
 
 # A clockwise radial layout, matching the reference theme -- XMind's own
