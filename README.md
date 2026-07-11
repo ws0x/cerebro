@@ -39,6 +39,8 @@ content, not a transcript-slicer that pretends to.
 - [Two ways to use it](#two-ways-to-use-it)
 - [Command reference](#command-reference)
 - [Processing levels](#processing-levels)
+  - [Anchors: preserving what your source actually said](#anchors-preserving-what-your-source-actually-said)
+  - [Numbered lists in a source (enumeration-aware structuring)](#numbered-lists-in-a-source-enumeration-aware-structuring)
 - [Choosing an engine](#choosing-an-engine)
 - [Output formats: OPML vs. XMind vs. Markdown](#output-formats-opml-vs-xmind-vs-markdown)
 - [Batch: playlists & course folders](#batch-playlists--course-folders)
@@ -446,6 +448,28 @@ different branches — e.g. "Overfitting *prevented by* Regularization"), which
 is why `--format xmind` matters most at that level: OPML has no way to
 represent them.
 
+### Anchors: preserving what your source actually said
+
+Every level keeps genuine anchors — direct quotes, named people/books/tools,
+and numbers your source actually stated (a page count, a percentage, a dollar
+figure) — as their own nodes instead of folding them into a paraphrased
+summary. This matters most at `expert`, where the pull toward abstracting
+everything into "concepts and insights" is strongest: a number like "784
+input neurons" stays a number, not "a large number of neurons." In XMind
+output these render with their own marker (look for the orange star) so a
+preserved figure is visually distinct from an ordinary sub-point.
+
+### Numbered lists in a source (enumeration-aware structuring)
+
+If a source already announces its own numbered list — "the five stages of
+grief," "reason number one," a video literally titled "7 habits" — cerebro
+detects that and uses it as the map's real spine instead of asking the model
+to invent a hierarchy from flat text, the same judgment call PDFs and web
+articles get for their own headings (see [PDF files](#pdf-files)). False
+positives (a stray "second of all" with no real list following) are filtered
+out; when nothing clears the bar, cerebro falls back to the normal map →
+reduce pipeline, unchanged.
+
 ## Choosing an engine
 
 | Engine | Cost | Speed | Notes |
@@ -478,6 +502,15 @@ few seconds under free-tier limits reads as waiting on purpose, not stuck.
 | Relationship arrows (`expert` level) | ❌ | ✅ | ✅ *(as a plain "Relationships" section, not inline arrows)* |
 | Opens in | XMind, Freemind, MindNode, Workflowy, most outliners | XMind only (native) | Obsidian, Notion, any plain-text/markdown editor |
 | Import step | `File → Import → OPML` | Just double-click | Just open the file |
+
+Every `.xmind` file's central topic also carries a real hyperlink back to its
+source — the YouTube URL, the local file, or the web article — click it in
+XMind to jump straight back to what the map was built from. And a map built
+from actual content (video/PDF/article) gets a different visual theme than
+one built from a folder structure (`cerebro tree`): content maps use a warm
+"Dawn" palette with a radial layout suited to following a narrative outward
+from the center; `tree` maps use a cooler "Hawaii" palette with a top-to-
+bottom logic-chart layout suited to scanning a hierarchy, not following one.
 
 **Rule of thumb:** use `opml` for `brief`/`full` maps or if you want maximum
 outliner compatibility; use `xmind` for `expert` maps in XMind itself, so you
