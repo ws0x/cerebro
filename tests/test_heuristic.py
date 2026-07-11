@@ -13,6 +13,13 @@ from cerebro.structure.heuristic import (
 )
 from cerebro.transcript import Segment, Transcript
 
+_ENUMERATED_SEGMENTS = [
+    Segment(text="In this video I'll cover three things you need to know.", start=0.0),
+    Segment(text="Number one is keep promises to yourself. It builds real confidence daily.", start=10.0),
+    Segment(text="Number two is get your house in order. Your relationships are the foundation.", start=20.0),
+    Segment(text="Number three is do hard things intentionally. Growth comes from chosen discomfort.", start=30.0),
+]
+
 
 def _segments(n, words_per_sentence=6, sentences_per_segment=3):
     out = []
@@ -165,3 +172,56 @@ def test_structure_never_raises_on_a_single_short_segment():
     t = Transcript(source="s", title="Short", segments=[Segment(text="Hello there.", start=0.0)])
     mm = HeuristicStructurer().structure(t, level="expert")
     assert mm.root.children
+
+
+# -- Enumeration-aware path (no AI) -----------------------------------------
+
+
+def test_an_enumerated_transcript_gets_a_numbered_spine_not_word_count_chunks():
+    t = Transcript(source="s", title="3 Things", segments=_ENUMERATED_SEGMENTS)
+    mm = HeuristicStructurer().structure(t, level="full")
+    titles = [c.title for c in mm.root.children]
+    assert titles == [
+        "1. Keep Promises to Yourself",
+        "2. Get Your House in Order",
+        "3. Do Hard Things Intentionally",
+    ]
+
+
+def test_enumerated_branches_carry_their_own_section_timestamp():
+    t = Transcript(source="s", title="3 Things", segments=_ENUMERATED_SEGMENTS)
+    mm = HeuristicStructurer().structure(t, level="full")
+    assert [c.timestamp for c in mm.root.children] == [10.0, 20.0, 30.0]
+
+
+def test_enumerated_full_level_has_leaves_brief_level_does_not():
+    t = Transcript(source="s", title="3 Things", segments=_ENUMERATED_SEGMENTS)
+    full = HeuristicStructurer().structure(t, level="full")
+    brief = HeuristicStructurer().structure(t, level="brief")
+    assert any(c.children for c in full.root.children)
+    assert all(c.children == [] for c in brief.root.children)
+
+
+def test_a_short_intro_produces_no_overview_branch():
+    t = Transcript(source="s", title="3 Things", segments=_ENUMERATED_SEGMENTS)
+    mm = HeuristicStructurer().structure(t, level="full")
+    assert mm.root.children[0].title.startswith("1.")
+
+
+def test_a_long_intro_becomes_its_own_overview_branch():
+    long_intro = " ".join(f"word{i}" for i in range(45))
+    segments = [
+        Segment(text=long_intro + ".", start=0.0),
+        Segment(text="Number one is alpha bravo charlie delta echo foxtrot.", start=30.0),
+        Segment(text="Number two is golf hotel india juliet kilo lima.", start=40.0),
+        Segment(text="Number three is mike november oscar papa quebec romeo.", start=50.0),
+    ]
+    t = Transcript(source="s", title="3 Things", segments=segments)
+    mm = HeuristicStructurer().structure(t, level="full")
+    assert mm.root.children[0].title == "Overview"
+    assert mm.root.children[1].title.startswith("1.")
+
+
+def test_a_non_enumerated_transcript_still_uses_the_flat_chunking_path():
+    mm = HeuristicStructurer().structure(_transcript(n_segments=12), level="full")
+    assert not any(c.title.startswith(("1.", "2.", "3.")) for c in mm.root.children)
