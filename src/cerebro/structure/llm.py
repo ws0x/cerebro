@@ -266,6 +266,18 @@ class LLMStructurer:
         for child in tree.get("children", []) or []:
             if isinstance(child, dict):
                 root.children.append(self._build_node(child))
+        if level == "brief":
+            # brief = advance organizer: main branches + a gist note each,
+            # nothing deeper. The prompt already asks for "minimal nesting",
+            # but live testing showed that's unreliable -- a real run
+            # produced a *deeper, bigger* tree at brief than the same source
+            # got at expert, because the model kept the branch count in line
+            # but ignored the nesting instruction. Enforced here in code
+            # instead, the same fix already applied to the enumerated path's
+            # brief level for the same reason (models routinely ignore shape
+            # instructions in the prompt alone).
+            for branch in root.children:
+                branch.children = []
         return MindMap(title=root.title, root=root, source=transcript.source, level=level)
 
     # -- enumerated (author-numbered list) path -------------------------------

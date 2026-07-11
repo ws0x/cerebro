@@ -30,6 +30,24 @@ def test_expert_adds_relationships():
     assert len(mm.relationships) >= 1
 
 
+def test_brief_strips_grandchildren_even_if_the_model_nested_them():
+    # MockProvider's REDUCE reply always nests "Sub-point A"/"Sub-point B"
+    # under "First main branch" regardless of level -- exactly the shape a
+    # live model produced at brief on a real video (branches were fine, but
+    # nesting under them ignored "minimal nesting"). brief must strip that
+    # in code, not trust the prompt.
+    mm = LLMStructurer(MockProvider()).structure(_transcript(), level="brief")
+    assert mm.root.children  # branches present
+    assert all(not b.children for b in mm.root.children)  # but nothing under them
+    assert mm.root.children[0].note  # the branch's own note survives the strip
+
+
+def test_full_and_expert_keep_grandchildren_unlike_brief():
+    for level in ("full", "expert"):
+        mm = LLMStructurer(MockProvider()).structure(_transcript(), level=level)
+        assert any(b.children for b in mm.root.children), level
+
+
 class CustomMockProvider(MockProvider):
     def __init__(self, response: dict):
         super().__init__()
