@@ -110,8 +110,15 @@ def test_expert_level_adds_relationships():
     assert len(mm.relationships) >= 1
 
 
-def test_section_fill_failure_degrades_to_a_snippet_note_not_a_crash():
-    class _FlakyProvider(MockProvider):
+def test_total_section_fill_failure_raises_instead_of_faking_an_ai_success():
+    # Found via a real Groq-vs-Gemini comparison: when EVERY section-fill call
+    # fails, the old behavior silently degraded to raw snippets for every
+    # section and still returned a normal-looking MindMap -- which cli.py then
+    # reported (and persisted to the manifest / --json output) as if the
+    # requested LLM engine had actually built it. Zero real AI content should
+    # raise, same as _map()'s existing "all failed" precedent, so the caller
+    # falls back to heuristic and reports that honestly instead.
+    class _AlwaysFailsSectionProvider(MockProvider):
         def complete_json(self, system, user):
             if "TASK: SECTION" in system:
                 from cerebro.llm.base import LLMError
@@ -119,9 +126,31 @@ def test_section_fill_failure_degrades_to_a_snippet_note_not_a_crash():
                 raise LLMError("section fill boom")
             return super().complete_json(system, user)
 
+    import pytest
+    from cerebro.llm.base import LLMError
+
     t = _list_transcript()
-    mm = LLMStructurer(_FlakyProvider(), cache=Cache(enabled=False)).structure(t, level="full")
+    with pytest.raises(LLMError, match="All section-fill calls failed"):
+        LLMStructurer(_AlwaysFailsSectionProvider(), cache=Cache(enabled=False)).structure(t, level="full")
+
+
+def test_partial_section_fill_failure_still_degrades_gracefully():
+    # A single flaky section amid otherwise-working ones is a genuinely
+    # different case from total failure -- real AI content exists for the
+    # other sections, so this must NOT raise; the one failed section still
+    # gets a usable deterministic snippet instead of being blank.
+    class _OneFlakySectionProvider(MockProvider):
+        def complete_json(self, system, user):
+            if "TASK: SECTION" in system and "keep promises" in user:
+                from cerebro.llm.base import LLMError
+
+                raise LLMError("section fill boom")
+            return super().complete_json(system, user)
+
+    t = _list_transcript()
+    mm = LLMStructurer(_OneFlakySectionProvider(), cache=Cache(enabled=False)).structure(t, level="full")
     numbered = [c for c in mm.root.children if c.title[0].isdigit()]
     assert len(numbered) == 3  # spine still built
-    assert all(c.note for c in numbered)  # deterministic snippet note kept
-    assert all(not c.children for c in numbered)  # no points on failure, but no crash
+    assert all(c.note for c in numbered)  # every section has a note (snippet or real)
+    failed = numbered[0]  # "1. ..." is the one whose source text matched the flaky trigger
+    assert not failed.children  # no points on failure, but no crash

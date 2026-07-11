@@ -328,18 +328,22 @@ class LLMStructurer:
             cleaned.append(polished or fallback)
         return cleaned
 
-    def _fill_section(self, heading: str, text: str, level: str) -> dict:
+    def _fill_section(self, heading: str, text: str, level: str) -> tuple[dict, bool]:
         """Content (note + points) for one section whose title is FIXED. On
         failure, a deterministic snippet note keeps the section usable rather
-        than blank -- same resilience posture as the document/enrich path."""
+        than blank -- same resilience posture as the document/enrich path.
+        Returns (content, succeeded) -- the caller needs to know whether ANY
+        section actually got real AI content, or a total failure here (every
+        section silently falling back) would look identical to a real map to
+        anything counting nodes, and get reported as an AI-engine success."""
         capped = " ".join(text.split()[: _MAX_WORDS[level]])
         user = json.dumps({"section_title": heading, "transcript": capped}, ensure_ascii=False)
         try:
-            return self._call("section_fill", section_fill_system(level), user, level, user)
+            return self._call("section_fill", section_fill_system(level), user, level, user), True
         except LLMError as exc:
             self.on_event("map_error", error=str(exc))
             snippet = text.strip()[:_SECTION_NOTE_FALLBACK_CHARS]
-            return {"note": snippet, "points": []}
+            return {"note": snippet, "points": []}, False
 
     def _build_section_branch(
         self, number: int | None, heading: str, start: float, filled: dict, level: str
@@ -375,10 +379,12 @@ class LLMStructurer:
         headings = self._polish_headings(transcript, sections, section_texts)
 
         root = Node(title=transcript.title or "Mind Map", type=NodeType.root)
+        any_succeeded = False
 
         # Optional leading advance-organizer branch from the pre-#1 intro/thesis.
         if len(intro.split()) >= _INTRO_MIN_WORDS:
-            overview = self._fill_section("Overview", intro, level)
+            overview, ok = self._fill_section("Overview", intro, level)
+            any_succeeded = any_succeeded or ok
             root.children.append(self._build_section_branch(None, "Overview", sections[0].start, overview, level))
         self.on_event("map_progress", done=1, total=len(sections) + 1)
 
@@ -391,11 +397,20 @@ class LLMStructurer:
             }
             for fut in as_completed(futures):
                 i = futures[fut]
+                filled, ok = fut.result()
+                any_succeeded = any_succeeded or ok
                 results[i] = self._build_section_branch(
-                    sections[i].number, headings[i], sections[i].start, fut.result(), level
+                    sections[i].number, headings[i], sections[i].start, filled, level
                 )
                 done += 1
                 self.on_event("map_progress", done=done, total=len(sections) + 1)
+
+        if not any_succeeded:
+            # Every section silently fell back to a raw snippet -- same
+            # all-failed signal _map() raises on, so the caller (cli.py)
+            # falls back to the heuristic engine and reports it honestly
+            # instead of labeling a 100%-fallback map as an AI success.
+            raise LLMError("All section-fill calls failed; cannot build a map.")
 
         for i in range(len(sections)):
             root.children.append(results[i])

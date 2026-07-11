@@ -135,18 +135,24 @@ def _emit_result(payload: dict) -> None:
         print(json.dumps(payload, ensure_ascii=False))
 
 
-def _structure(transcript, level, provider, cache, relationship_limit=8):
-    """Build the map with the resolved engine, showing live progress and
-    falling back to the offline heuristic if an LLM call fails."""
+def _structure(transcript, level, provider, cache, relationship_limit=8) -> tuple:
+    """Returns (map, used_heuristic_fallback). used_heuristic_fallback is True
+    only when an LLM engine was requested but every call failed and the result
+    is actually the deterministic heuristic map -- the caller needs this to
+    correct engine_label, or a total LLM failure gets reported (and persisted
+    to the manifest / --json output) as if the requested engine had succeeded."""
     if transcript.outline:
         # A source with real, pre-existing structure (currently: PDFs with a
         # TOC/detected headings) -- the hierarchy is already known, so this
         # skips reduce entirely rather than asking an LLM to reinvent it.
-        return _structure_document(transcript, level, provider, cache, relationship_limit)
+        # build_outline_map handles LLM failures per-leaf internally (keeps
+        # the deterministic snippet on failure) rather than a full swap, so
+        # this is never a total heuristic fallback the way the branch below is.
+        return _structure_document(transcript, level, provider, cache, relationship_limit), False
 
     if provider is None:
         with _spinner(f"Structuring ({level})…"):
-            return HeuristicStructurer().structure(transcript, level=level)
+            return HeuristicStructurer().structure(transcript, level=level), False
 
     with RichProgress(
         SpinnerColumn(),
@@ -178,9 +184,9 @@ def _structure(transcript, level, provider, cache, relationship_limit=8):
         except LLMError as exc:
             progress.stop()
             console.print(f"[yellow]! LLM engine failed ({exc}); falling back to heuristic.[/]")
-            return HeuristicStructurer().structure(transcript, level=level)
+            return HeuristicStructurer().structure(transcript, level=level), True
         progress.update(task, completed=progress.tasks[0].total)
-        return mm
+        return mm, False
 
 
 def _structure_document(transcript, level, provider, cache, relationship_limit=8):
@@ -405,7 +411,9 @@ def _do_map(
     if provider is None and engine == "auto":
         qprint("[yellow]![/] No API key found — using the offline heuristic engine.")
 
-    mm = _structure(transcript, level, provider, cache, relationship_limit=relationship_limit)
+    mm, used_fallback = _structure(transcript, level, provider, cache, relationship_limit=relationship_limit)
+    if used_fallback:
+        engine_label = "heuristic (offline)"
     qprint(
         f"[green]✓[/] Map built with [bold]{engine_label}[/]: "
         f"{mm.node_count()} nodes, depth {mm.depth()}"
