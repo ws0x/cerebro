@@ -1,11 +1,20 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+from PyInstaller.utils.hooks import collect_data_files
+
+# trafilatura reads settings.cfg at runtime via configparser (not a Python
+# import), so PyInstaller's static import analysis never sees it -- omitting
+# it doesn't raise ImportError, it makes every fetch silently fail with
+# "No option 'download_timeout' in section: 'DEFAULT'" instead. Found by
+# actually building and running the frozen exe against a local test server,
+# not just checking that dependencies import.
+datas = collect_data_files('trafilatura')
 
 a = Analysis(
     ['build_scripts\\entry.py'],
     pathex=['src'],
     binaries=[],
-    datas=[],
+    datas=datas,
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
