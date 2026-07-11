@@ -58,6 +58,13 @@ class HeuristicStructurer:
 
         chunks = _chunk_segments(transcript.segments, _TARGET_TOPICS[level])
         n_leaves = _LEAVES_PER_TOPIC[level]
+        # A source with no real timing data (e.g. a PDF, where Segment.start is
+        # always 0.0 -- a page number is not a timestamp) must not render a
+        # bogus "[0:00]" on every node. A real video/subtitle transcript almost
+        # always has at least one segment with a genuine nonzero start, which
+        # is how the two cases are told apart -- unlike a bare `or None` check,
+        # this doesn't also swallow a real video's true first-topic [0:00].
+        has_real_timing = any(s.start or s.duration for s in transcript.segments)
 
         for chunk in chunks:
             chunk_text = " ".join(s.text.strip() for s in chunk).strip()
@@ -69,7 +76,7 @@ class HeuristicStructurer:
             topic = root.add(
                 _titlecase_snippet(head),
                 type=NodeType.topic,
-                timestamp=chunk[0].start or None,
+                timestamp=chunk[0].start if has_real_timing else None,
                 note=_truncate(chunk_text, 500),
             )
 
