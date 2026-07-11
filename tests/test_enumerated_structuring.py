@@ -54,14 +54,20 @@ def test_full_level_branches_have_notes_and_points():
 
 
 def test_brief_level_has_notes_but_no_subpoints():
-    # brief = advance organizer: the numbered spine + a gist note each, no
-    # sub-points (MockProvider's SECTION reply is level-agnostic, so assert on
-    # what the prompt *level* drives is covered in the live run; here we at
-    # least confirm the spine + notes exist).
+    # brief = advance organizer: numbered spine + gist note each, NO sub-points.
+    # Enforced deterministically (MockProvider's SECTION reply always returns
+    # points, so this proves the code drops them at brief, not the prompt).
     mm = _structure(level="brief")
     numbered = [c for c in mm.root.children if c.title[0].isdigit()]
     assert len(numbered) == 3
     assert all(c.note for c in numbered)
+    assert all(not c.children for c in numbered)  # spine only, no points
+
+
+def test_full_level_keeps_subpoints_unlike_brief():
+    mm = _structure(level="full")
+    numbered = [c for c in mm.root.children if c.title[0].isdigit()]
+    assert all(c.children for c in numbered)  # full keeps the points brief drops
 
 
 def test_long_intro_becomes_an_overview_branch():

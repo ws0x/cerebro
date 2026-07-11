@@ -329,7 +329,9 @@ class LLMStructurer:
             snippet = text.strip()[:_SECTION_NOTE_FALLBACK_CHARS]
             return {"note": snippet, "points": []}
 
-    def _build_section_branch(self, number: int | None, heading: str, start: float, filled: dict) -> Node:
+    def _build_section_branch(
+        self, number: int | None, heading: str, start: float, filled: dict, level: str
+    ) -> Node:
         prefix = f"{number}. " if number is not None else ""
         branch = Node(
             title=f"{prefix}{heading}".strip(),
@@ -337,6 +339,11 @@ class LLMStructurer:
             note=(str(filled.get("note")).strip() or None) if filled.get("note") else None,
             timestamp=float(start) if start not in (None, float("-inf")) else None,
         )
+        # brief = advance organizer: the numbered spine + a gist note each, no
+        # sub-points -- enforced here in code rather than trusted to the prompt,
+        # since models routinely ignore "return an empty list".
+        if level == "brief":
+            return branch
         for point in filled.get("points", []) or []:
             if isinstance(point, dict) and str(point.get("title", "")).strip():
                 branch.children.append(
@@ -360,7 +367,7 @@ class LLMStructurer:
         # Optional leading advance-organizer branch from the pre-#1 intro/thesis.
         if len(intro.split()) >= _INTRO_MIN_WORDS:
             overview = self._fill_section("Overview", intro, level)
-            root.children.append(self._build_section_branch(None, "Overview", sections[0].start, overview))
+            root.children.append(self._build_section_branch(None, "Overview", sections[0].start, overview, level))
         self.on_event("map_progress", done=1, total=len(sections) + 1)
 
         done = 1
@@ -373,7 +380,7 @@ class LLMStructurer:
             for fut in as_completed(futures):
                 i = futures[fut]
                 results[i] = self._build_section_branch(
-                    sections[i].number, headings[i], sections[i].start, fut.result()
+                    sections[i].number, headings[i], sections[i].start, fut.result(), level
                 )
                 done += 1
                 self.on_event("map_progress", done=done, total=len(sections) + 1)
