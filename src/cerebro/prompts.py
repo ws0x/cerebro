@@ -5,7 +5,7 @@ literal JSON braces doubled (``{{`` / ``}}``). Bump ``PROMPT_VERSION`` whenever 
 prompt changes so the cache invalidates cleanly (it is part of every cache key).
 """
 
-PROMPT_VERSION = "v6"
+PROMPT_VERSION = "v7"
 
 NODE_TYPES = "topic, concept, definition, example, insight, action, warning, question, detail"
 
@@ -17,18 +17,29 @@ generic (e.g. "Activation Function") — do NOT name a specific instance (e.g.
 "Sigmoid" or "ReLU") unless that specific name is literally present in the text."""
 
 _ANCHORS = """ANCHOR RULE (preserve memorable hooks): if the input contains any of the
-following, you MUST keep it — never drop it or generalize it into an abstract
-umbrella. These concrete anchors are how a learner actually remembers the
-abstract point; a map without them is forgettable.
+following, you MUST keep it — never drop it, round it, or generalize it into an
+abstract umbrella. These concrete anchors are how a learner actually remembers
+the abstract point; a map without them is forgettable.
 - a direct quotation → keep it close to verbatim, WITH attribution if stated
   (e.g. 'Carl Jung: until you make the unconscious conscious, you will call it
   fate'); type it "example".
 - a named book, person, study, framework, or place (e.g. "Man's Search for
   Meaning") → type it "insight".
-- a specific number, statistic, date, or proper name → keep the exact figure/name.
 - a concrete personal story or vivid example (e.g. tearing a muscle before the
   competition and showing up anyway) → a short phrase naming it, type "example".
-Never treat an anchor as a "duplicate" to merge away."""
+
+NUMERIC ANCHORS (a common failure mode — read carefully): any specific number,
+count, percentage, statistic, date, price, or measurement is NON-NEGOTIABLE and
+must appear VERBATIM, digit-for-digit, exactly as stated (784, not "hundreds";
+13,000, not "thousands"; 1,500 calories, not "a calorie deficit"). Never fold a
+number into a vaguer paraphrase of the concept it belongs to — write it OUT, in
+the title or note of the point it belongs to, or as its own point if it doesn't
+cleanly attach to one. Type it "detail". A number is exactly as mandatory as a
+quotation — do not keep it at a shallow level of detail and then quietly drop
+it once the map gets deeper or more elaborate; a more detailed map must never
+contain FEWER concrete numbers than a shallower one would.
+
+Never treat an anchor — numeric or otherwise — as a "duplicate" to merge away."""
 
 _MAP = """You are an expert knowledge cartographer. TASK: MAP.
 You receive one segment of a video transcript. Extract its core teaching as a
