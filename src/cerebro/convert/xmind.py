@@ -354,10 +354,35 @@ def _topic(node: Node) -> dict:
     return topic
 
 
+def _source_href(source: str | None) -> str | None:
+    """A clickable XMind hyperlink (the topic-level ``href`` field, standard
+    since XMind 8/Zen) for the map's own source -- a real web URL as-is, or a
+    local file/folder turned into a ``file://`` URI so the map can jump
+    straight back to what it was built from. ``None`` (no href at all) for
+    anything that isn't a genuine, resolvable link -- e.g. a batch/merge
+    combined map has no single source to point at."""
+    if not source:
+        return None
+    if source.startswith(("http://", "https://", "file://")):
+        # Already a real URI -- e.g. re-writing a MindMap read back from an
+        # existing .xmind, whose source is the href merge.py already recovered.
+        return source
+    try:
+        path = Path(source)
+        if path.exists():
+            return path.resolve().as_uri()
+    except (OSError, ValueError):
+        pass
+    return None
+
+
 def mindmap_to_xmind_content(mm: MindMap) -> list:
     """Build the ``content.json`` structure (a list of sheets)."""
     root_topic = _topic(mm.root)
     root_topic["structureClass"] = _STRUCTURE_CLASS
+    href = _source_href(mm.source)
+    if href:
+        root_topic["href"] = href
 
     sheet: dict = {
         "id": uuid.uuid4().hex,

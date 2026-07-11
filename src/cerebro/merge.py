@@ -106,7 +106,12 @@ def read_xmind(path: Path) -> MindMap:
         if "end1Id" in r and "end2Id" in r
     ]
     title = sheet.get("title") or root_node.title
-    return MindMap(title=title, root=root_node, relationships=relationships, source=str(path))
+    # Prefer the root topic's own href (the original video/PDF/article the map
+    # was built from) over the .xmind file's own path -- losing that on a
+    # read-modify-write round trip (cerebro edit, or merging this file into
+    # another) would silently drop the hyperlink cerebro itself just added.
+    source = root_topic.get("href") or str(path)
+    return MindMap(title=title, root=root_node, relationships=relationships, source=source)
 
 
 def read_map(path: Path) -> MindMap:

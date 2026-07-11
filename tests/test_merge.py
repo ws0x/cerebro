@@ -56,6 +56,23 @@ def test_read_xmind_roundtrips_title_note_children_and_type(tmp_path):
     assert read_back.root.children[1].type == NodeType.warning
 
 
+def test_read_xmind_prefers_the_roots_own_href_over_the_file_path(tmp_path):
+    root = Node(title="R", type=NodeType.root)
+    root.add("Child")
+    mm = MindMap(title="R", root=root, source="https://youtu.be/abc123")
+    path = write_xmind(mm, tmp_path / "map.xmind")
+    read_back = read_xmind(path)
+    # the original video URL survives, not the .xmind file's own filesystem path
+    assert read_back.source == "https://youtu.be/abc123"
+
+
+def test_read_xmind_falls_back_to_the_file_path_when_theres_no_href(tmp_path):
+    mm = MindMap(title="R", root=Node(title="R", type=NodeType.root), source=None)
+    path = write_xmind(mm, tmp_path / "map.xmind")
+    read_back = read_xmind(path)
+    assert read_back.source == str(path)
+
+
 def test_read_xmind_roundtrips_relationships(tmp_path):
     root = Node(title="R", type=NodeType.root)
     a = root.add("A", type=NodeType.concept)

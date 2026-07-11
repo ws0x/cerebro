@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from cerebro.convert import write_xmind
-from cerebro.convert.xmind import mindmap_to_xmind_content
+from cerebro.convert.xmind import _source_href, mindmap_to_xmind_content
 from cerebro.ir import MindMap, Node, NodeType, Relationship
 
 _REFERENCE_TEMPLATE = (
@@ -112,3 +112,58 @@ def test_embedded_theme_is_byte_identical_to_the_preserved_reference_template():
 
     sheet = mindmap_to_xmind_content(_map())[0]
     assert sheet["theme"] == reference_theme
+
+
+def test_source_href_passes_through_a_web_url():
+    assert _source_href("https://youtu.be/abc123") == "https://youtu.be/abc123"
+    assert _source_href("http://example.com/article") == "http://example.com/article"
+
+
+def test_source_href_passes_through_an_existing_file_uri_unchanged():
+    uri = "file:///C:/some/existing/path.pdf"
+    assert _source_href(uri) == uri
+
+
+def test_source_href_converts_an_existing_local_path_to_a_file_uri(tmp_path):
+    pdf = tmp_path / "notes.pdf"
+    pdf.write_bytes(b"%PDF-fake")
+    href = _source_href(str(pdf))
+    assert href.startswith("file:")
+    assert "notes.pdf" in href
+
+
+def test_source_href_is_none_for_a_nonexistent_local_path():
+    assert _source_href("C:/definitely/not/a/real/file.pdf") is None
+
+
+def test_source_href_is_none_for_no_source():
+    assert _source_href(None) is None
+    assert _source_href("") is None
+
+
+def test_root_topic_gets_an_href_when_source_is_a_url():
+    mm = MindMap(title="T", root=Node(title="T", type=NodeType.root), source="https://youtu.be/abc123")
+    sheet = mindmap_to_xmind_content(mm)[0]
+    assert sheet["rootTopic"]["href"] == "https://youtu.be/abc123"
+
+
+def test_root_topic_has_no_href_when_source_is_none():
+    mm = MindMap(title="T", root=Node(title="T", type=NodeType.root), source=None)
+    sheet = mindmap_to_xmind_content(mm)[0]
+    assert "href" not in sheet["rootTopic"]
+
+
+def test_non_root_topics_never_get_an_href():
+    mm = _map()
+    mm.source = "https://youtu.be/abc123"
+    sheet = mindmap_to_xmind_content(mm)[0]
+    for child in sheet["rootTopic"]["children"]["attached"]:
+        assert "href" not in child
+
+
+def test_href_round_trips_through_write_and_real_zip_read(tmp_path):
+    mm = MindMap(title="T", root=Node(title="T", type=NodeType.root), source="https://youtu.be/abc123")
+    path = write_xmind(mm, tmp_path / "linked.xmind")
+    with zipfile.ZipFile(path) as z:
+        content = json.loads(z.read("content.json"))
+    assert content[0]["rootTopic"]["href"] == "https://youtu.be/abc123"
