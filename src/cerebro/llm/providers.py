@@ -12,6 +12,7 @@ import json
 import os
 
 from .base import LLMError, RateLimiter, parse_json, post_json
+from .pacing import load_pacing
 
 
 def _min_interval(env_name: str, default: float) -> float:
@@ -26,9 +27,27 @@ def _min_interval(env_name: str, default: float) -> float:
 
 
 # Groq free llama-3.3-70b ~30 RPM; Gemini free 2.5-flash is tighter (~10-15
-# RPM). Slightly conservative so bursts never cross the line.
-_GROQ_MIN_INTERVAL = _min_interval("CEREBRO_GROQ_MIN_INTERVAL", 2.1)
-_GEMINI_MIN_INTERVAL = _min_interval("CEREBRO_GEMINI_MIN_INTERVAL", 4.5)
+# RPM). Slightly conservative so bursts never cross the line. These are also
+# the decay floor a persisted interval nudges back toward on a clean run --
+# see llm/pacing.py.
+_GROQ_DEFAULT_INTERVAL = 2.1
+_GEMINI_DEFAULT_INTERVAL = 4.5
+DEFAULT_INTERVALS = {"groq": _GROQ_DEFAULT_INTERVAL, "gemini": _GEMINI_DEFAULT_INTERVAL}
+
+
+def _starting_interval(provider_name: str, env_name: str, hardcoded_default: float) -> float:
+    """A provider's interval learned in a previous run (raised via
+    backoff(), or decayed back down after a clean one) is loaded fresh here
+    as this run's starting point -- so a run doesn't have to rediscover the
+    same real rate limit via another failed call every single time.
+
+    Read at CONSTRUCTION time rather than cached at module-import time: the
+    module is typically only imported once per process anyway, but reading
+    fresh keeps this simple to test and correct if that ever changes. An
+    explicit env var still wins over whatever was learned, since that's a
+    deliberate per-account override."""
+    persisted = load_pacing().get(provider_name, hardcoded_default)
+    return _min_interval(env_name, persisted)
 
 
 class GroqProvider:
@@ -40,7 +59,9 @@ class GroqProvider:
         self.api_key = api_key
         self.model = model
         self._url = "https://api.groq.com/openai/v1/chat/completions"
-        self._limiter = RateLimiter(_GROQ_MIN_INTERVAL if min_interval is None else min_interval)
+        if min_interval is None:
+            min_interval = _starting_interval("groq", "CEREBRO_GROQ_MIN_INTERVAL", _GROQ_DEFAULT_INTERVAL)
+        self._limiter = RateLimiter(min_interval)
 
     def complete_json(self, system: str, user: str) -> dict:
         self._limiter.acquire()
@@ -54,7 +75,7 @@ class GroqProvider:
             "temperature": 0.2,
         }
         headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
-        data = post_json(self._url, headers, payload)
+        data = post_json(self._url, headers, payload, rate_limiter=self._limiter)
         try:
             content = data["choices"][0]["message"]["content"]
         except (KeyError, IndexError) as exc:
@@ -70,7 +91,9 @@ class GeminiProvider:
     def __init__(self, api_key: str, model: str = "gemini-flash-latest", min_interval: float | None = None):
         self.api_key = api_key
         self.model = model
-        self._limiter = RateLimiter(_GEMINI_MIN_INTERVAL if min_interval is None else min_interval)
+        if min_interval is None:
+            min_interval = _starting_interval("gemini", "CEREBRO_GEMINI_MIN_INTERVAL", _GEMINI_DEFAULT_INTERVAL)
+        self._limiter = RateLimiter(min_interval)
 
     def complete_json(self, system: str, user: str) -> dict:
         self._limiter.acquire()
@@ -83,7 +106,7 @@ class GeminiProvider:
             "contents": [{"parts": [{"text": user}]}],
             "generationConfig": {"response_mime_type": "application/json", "temperature": 0.2},
         }
-        data = post_json(url, {"Content-Type": "application/json"}, payload)
+        data = post_json(url, {"Content-Type": "application/json"}, payload, rate_limiter=self._limiter)
         try:
             content = data["candidates"][0]["content"]["parts"][0]["text"]
         except (KeyError, IndexError) as exc:

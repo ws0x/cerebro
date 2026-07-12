@@ -17,8 +17,11 @@ class LLMError(RuntimeError):
     """Raised when a provider call fails after retries or returns junk."""
 
 
+_BACKOFF_MAX_INTERVAL = 30.0  # seconds -- same safety cap as _retry_delay's
+
+
 class RateLimiter:
-    """Thread-safe minimum-interval limiter.
+    """Thread-safe, SELF-CORRECTING minimum-interval limiter.
 
     Each ``acquire()`` reserves the next available time slot (slots spaced at
     least ``min_interval`` seconds apart) and sleeps until it -- so concurrent
@@ -26,12 +29,21 @@ class RateLimiter:
     bursting all at once and getting 429-stormed. The slot is reserved inside
     the lock but slept for outside it, so threads don't serialize on the lock
     while waiting. A ``min_interval`` of 0 disables it entirely (e.g. tests,
-    the offline mock)."""
+    the offline mock).
+
+    A hardcoded starting interval is a guess -- it can be wrong for a given
+    account/tier in either direction. ``backoff()`` is the fix: called from
+    post_json the moment ANY thread observes an ordinary 429, it raises the
+    interval for EVERY subsequent acquire() across the whole thread pool
+    immediately, not just that one call's own retry. A burst that started
+    too fast self-corrects mid-run instead of every thread independently
+    re-colliding with the same too-optimistic pace."""
 
     def __init__(self, min_interval: float):
         self._min_interval = max(0.0, min_interval)
         self._lock = threading.Lock()
         self._next_allowed = 0.0
+        self._hit_limit = False  # did this run ever need to back off?
 
     def acquire(self) -> None:
         if self._min_interval <= 0:
@@ -43,6 +55,24 @@ class RateLimiter:
             wait = slot - now
         if wait > 0:
             time.sleep(wait)
+
+    def backoff(self, factor: float = 1.6) -> None:
+        """Slow down for every future acquire() -- the assumed interval was
+        too optimistic for this account's real limit. Multiplicative, capped,
+        and monotonic within a run (never speeds back up mid-run -- that's
+        cross-run persistence's job, see llm/pacing.py)."""
+        with self._lock:
+            self._hit_limit = True
+            base = self._min_interval if self._min_interval > 0 else 1.0
+            self._min_interval = min(base * factor, _BACKOFF_MAX_INTERVAL)
+
+    @property
+    def current_interval(self) -> float:
+        return self._min_interval
+
+    @property
+    def hit_limit(self) -> bool:
+        return self._hit_limit
 
 
 class LLMProvider(Protocol):
@@ -121,6 +151,7 @@ def post_json(
     payload: dict,
     timeout: int = 60,
     retries: int = 3,
+    rate_limiter: "RateLimiter | None" = None,
 ) -> dict:
     """POST with exponential backoff; retries 429/5xx and network errors.
 
@@ -130,6 +161,12 @@ def post_json(
     silently, indistinguishable from a hang. The final failure message
     calls out a rate limit specifically when that's what actually happened,
     with an actionable next step, instead of a bare HTTP status code.
+
+    ``rate_limiter``, when given, gets told about an ordinary (non-daily)
+    429 via ``.backoff()`` -- this is what makes the PACING itself adapt
+    mid-run: the shared limiter slows down for every subsequent call across
+    the whole thread pool the moment any one of them discovers the assumed
+    interval was too fast, not just this call's own retry delay.
     """
     last_exc: Exception | None = None
     last_status: int | None = None
@@ -151,6 +188,8 @@ def post_json(
                     "recover by retrying -- it resets tomorrow. Switch --engine to another "
                     "provider, or use --engine heuristic to keep going offline right now."
                 ) from exc
+            if resp is not None and resp.status_code == 429 and rate_limiter is not None:
+                rate_limiter.backoff()
             if attempt < retries - 1:
                 delay = _retry_delay(resp, attempt)
                 reason = "rate limited (429)" if last_status == 429 else f"request failed ({exc})"

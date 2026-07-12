@@ -898,10 +898,22 @@ handles both:
   start over — it picks up only the chunks that didn't finish. cerebro tells
   you this is happening ("Resuming: 14/20 segments already cached from a
   previous attempt") instead of it being invisible.
-- **Request pacing** spaces calls under each provider's per-minute limit so a
-  run never bursts into a 429 storm — it just runs a bit slower and completes
-  reliably. Tune it with `CEREBRO_GROQ_MIN_INTERVAL` / `CEREBRO_GEMINI_MIN_INTERVAL`
-  (seconds between requests) if your tier differs from the defaults.
+- **Adaptive, self-correcting request pacing.** Calls are spaced under each
+  provider's per-minute limit so a run doesn't burst into a 429 storm. The
+  starting pace is a guess — it can be wrong for a given account/tier in
+  either direction — so it corrects itself two ways:
+  - *Live, within a run:* the moment any call hits an ordinary (non-daily)
+    429, every future call across the whole run slows down immediately, not
+    just that one call's own retry.
+  - *Across runs:* whatever pace a run settles on (or backs off to) is saved
+    to `~/.cerebro/pacing.json` and reused as the *next* run's starting
+    point — so a real limit only ever has to be rediscovered once, not every
+    single run. A run that stays clean the whole way through gradually
+    speeds back toward the hardcoded default instead of staying permanently
+    slow because of one long-past incident.
+  `CEREBRO_GROQ_MIN_INTERVAL` / `CEREBRO_GEMINI_MIN_INTERVAL` (seconds
+  between requests) still override both the default and whatever's
+  persisted, for a deliberate per-account tune.
 - **Provider failover.** With `--engine auto` (the default) and both
   `GROQ_API_KEY`/`GEMINI_API_KEY` set, a TOTAL failure on one provider (its
   daily quota exhausted, a sustained rate-limit storm) automatically tries

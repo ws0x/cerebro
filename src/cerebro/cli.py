@@ -60,6 +60,8 @@ from .ingest.folder import discover_course_sources
 from .ingest.playlist import PlaylistIngestError, is_playlist_url, load_playlist
 from .llm.base import LLMError
 from .llm.config import ConfigError, load_env, read_env_file, resolve_provider, resolve_provider_chain, write_env_file
+from .llm.pacing import record_pacing
+from .llm.providers import DEFAULT_INTERVALS
 from .manifest import lookup as manifest_lookup
 from .manifest import record as manifest_record
 from .merge import MergeError, merge_maps, read_map
@@ -190,6 +192,25 @@ def _emit_result(payload: dict) -> None:
     corrupt the JSON, so this deliberately bypasses Rich entirely."""
     if json_mode():
         print(json.dumps(payload, ensure_ascii=False))
+
+
+def _persist_pacing(provider_chain: list, used_provider) -> None:
+    """Save each provider's learned rate-limiter interval for next run.
+
+    Only two kinds of providers are worth recording: one that actually
+    backed off (learned a real limit this run -- including one that failed
+    over to the next provider entirely) and the one that ultimately
+    succeeded (eligible to decay back toward the default on a clean run).
+    A provider in the chain that was never reached shouldn't have its
+    unused, untouched interval recorded as if it meant anything.
+    """
+    for provider in provider_chain:
+        limiter = getattr(provider, "_limiter", None)
+        default_interval = DEFAULT_INTERVALS.get(getattr(provider, "name", None))
+        if limiter is None or default_interval is None:
+            continue
+        if limiter.hit_limit or provider is used_provider:
+            record_pacing(provider.name, limiter, default_interval)
 
 
 def _structure(transcript, level, provider_chain, cache, relationship_limit=8, synthesize=True, purpose="general") -> tuple:
@@ -546,6 +567,7 @@ def _do_map(
     mm, used_fallback, used_provider = _structure(
         transcript, level, provider_chain, cache, relationship_limit=relationship_limit, synthesize=synthesize, purpose=purpose
     )
+    _persist_pacing(provider_chain, used_provider)
     # Derived from what ACTUALLY built the map, not guessed beforehand and
     # corrected after -- failover means the provider that succeeds isn't
     # necessarily the first one in the chain.

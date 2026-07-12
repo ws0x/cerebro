@@ -177,6 +177,75 @@ def test_rate_limiter_negative_interval_is_treated_as_disabled():
     assert time.monotonic() - start < 0.1
 
 
+def test_rate_limiter_backoff_raises_the_interval_multiplicatively():
+    limiter = RateLimiter(2.0)
+    limiter.backoff(factor=1.6)
+    assert limiter.current_interval == pytest.approx(3.2)
+
+
+def test_rate_limiter_backoff_is_cumulative_across_calls():
+    limiter = RateLimiter(2.0)
+    limiter.backoff(factor=1.6)
+    limiter.backoff(factor=1.6)
+    assert limiter.current_interval == pytest.approx(2.0 * 1.6 * 1.6)
+
+
+def test_rate_limiter_backoff_caps_at_the_max_interval():
+    limiter = RateLimiter(20.0)
+    for _ in range(10):
+        limiter.backoff(factor=1.6)
+    assert limiter.current_interval == 30.0
+
+
+def test_rate_limiter_backoff_from_a_zero_starting_interval_still_slows_down():
+    # A zero interval means "disabled" for acquire(), but backoff() must still
+    # produce a real, positive interval -- 0 * factor would stay 0 forever.
+    limiter = RateLimiter(0)
+    limiter.backoff(factor=1.6)
+    assert limiter.current_interval > 0
+
+
+def test_rate_limiter_hit_limit_is_false_until_backoff_is_called():
+    limiter = RateLimiter(1.0)
+    assert limiter.hit_limit is False
+    limiter.backoff()
+    assert limiter.hit_limit is True
+
+
+def test_post_json_calls_backoff_on_an_ordinary_429(monkeypatch):
+    monkeypatch.setattr("time.sleep", lambda _: None)
+    limiter = RateLimiter(2.0)
+    responses = [_response(429, text="rate limit exceeded"), _response(200, json_body={"ok": True})]
+    with patch("requests.post", side_effect=responses):
+        post_json("http://x", {}, {}, retries=3, rate_limiter=limiter)
+    assert limiter.hit_limit is True
+    assert limiter.current_interval == pytest.approx(3.2)
+
+
+def test_post_json_does_not_backoff_on_a_daily_limit(monkeypatch):
+    # A daily-quota 429 fails fast and won't recover within this run -- calling
+    # backoff() for it would slow down every remaining call for no reason,
+    # since none of them are going to succeed today regardless of pacing.
+    slept = []
+    monkeypatch.setattr("time.sleep", lambda s: slept.append(s))
+    limiter = RateLimiter(2.0)
+    daily_limit_resp = _response(429, text="tokens per day (TPD): Limit 100000, Used 99559")
+    with patch("requests.post", return_value=daily_limit_resp):
+        with pytest.raises(LLMError, match="Daily quota exhausted"):
+            post_json("http://x", {}, {}, retries=3, rate_limiter=limiter)
+    assert limiter.hit_limit is False
+    assert limiter.current_interval == 2.0
+
+
+def test_post_json_without_a_rate_limiter_still_works_normally(monkeypatch):
+    # rate_limiter is optional -- existing callers that don't pass one (or
+    # tests) must not break.
+    monkeypatch.setattr("time.sleep", lambda _: None)
+    responses = [_response(429, text="rate limit exceeded"), _response(200, json_body={"ok": True})]
+    with patch("requests.post", side_effect=responses):
+        assert post_json("http://x", {}, {}, retries=3) == {"ok": True}
+
+
 def test_parse_json_bare_json():
     assert parse_json('{"label": "hello"}') == {"label": "hello"}
 

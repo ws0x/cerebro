@@ -18,6 +18,7 @@ GLOBAL_ENV_PATH = CONFIG_DIR / ".env"
 CACHE_DIR = CONFIG_DIR / "cache"
 TREE_SNAPSHOT_DIR = CONFIG_DIR / "tree-snapshots"
 BATCH_SNAPSHOT_DIR = CONFIG_DIR / "batch-snapshots"
+PACING_PATH = CONFIG_DIR / "pacing.json"
 
 
 def load_config(config_dir: Path | None = None) -> dict[str, str | int]:
