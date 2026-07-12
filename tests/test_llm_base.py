@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from cerebro.llm.base import LLMError, _retry_delay, post_json
+from cerebro.llm.base import LLMError, _retry_delay, parse_json, post_json
 
 
 def _response(status_code, text="", headers=None, json_body=None):
@@ -82,3 +82,60 @@ def test_post_json_prints_a_retry_notice(monkeypatch, capsys):
         post_json("http://x", {}, {}, retries=3)
     out = capsys.readouterr().out
     assert "rate limited" in out.lower()
+
+
+def test_parse_json_bare_json():
+    assert parse_json('{"label": "hello"}') == {"label": "hello"}
+
+
+def test_parse_json_fenced_with_json_tag():
+    content = '```json\n{"label": "hello"}\n```'
+    assert parse_json(content) == {"label": "hello"}
+
+
+def test_parse_json_fenced_without_json_tag():
+    content = '```\n{"label": "hello"}\n```'
+    assert parse_json(content) == {"label": "hello"}
+
+
+def test_parse_json_with_surrounding_prose_falls_back_to_brace_scanning():
+    content = 'Sure, here is the JSON you asked for:\n{"label": "hello"}\nHope that helps!'
+    assert parse_json(content) == {"label": "hello"}
+
+
+def test_parse_json_finds_the_first_valid_candidate_when_an_earlier_fence_is_broken():
+    # First fenced block is truncated/invalid JSON; the model's real answer
+    # is the second one -- parse_json must not give up after the first miss.
+    content = '```json\n{"broken": \n```\nActually, ```json\n{"label": "hello"}\n```'
+    assert parse_json(content) == {"label": "hello"}
+
+
+def test_parse_json_empty_string_raises():
+    with pytest.raises(LLMError, match="Empty model response"):
+        parse_json("")
+
+
+def test_parse_json_whitespace_only_raises():
+    with pytest.raises(LLMError, match="Empty model response"):
+        parse_json("   \n  ")
+
+
+def test_parse_json_unparseable_garbage_raises_with_truncated_content_in_message():
+    garbage = "not json at all, just plain prose with no braces whatsoever"
+    with pytest.raises(LLMError, match="Could not parse JSON"):
+        parse_json(garbage)
+
+
+def test_parse_json_mismatched_braces_raise_rather_than_return_garbage():
+    # Has a '{' and a later '}' but the span between them still isn't valid
+    # JSON -- must raise LLMError, not silently return something wrong.
+    content = "{not valid json} trailing { also not valid }"
+    with pytest.raises(LLMError, match="Could not parse JSON"):
+        parse_json(content)
+
+
+def test_parse_json_error_message_truncates_a_very_long_response():
+    long_garbage = "x" * 500
+    with pytest.raises(LLMError) as exc_info:
+        parse_json(long_garbage)
+    assert len(str(exc_info.value)) < 300
