@@ -119,6 +119,25 @@ def adaptive_max_words(
     return max(base_max_words, needed)
 
 
+# Further reduces call count on top of adaptive_max_words: rather than one
+# API call per chunk, group several chunks into one call (the model returns
+# one result per chunk in the group). A second, independent lever on the
+# same problem -- adaptive_max_words shrinks the CHUNK count, this shrinks
+# the CALL count for whatever chunks remain.
+_TARGET_BATCH_CALLS = 9
+
+
+def adaptive_batch_size(num_chunks: int, target_calls: int = _TARGET_BATCH_CALLS) -> int:
+    """How many chunks should share one MAP API call so the total call count
+    lands near ``target_calls``. Returns 1 (no batching at all) whenever
+    ``num_chunks`` is already at or below the target -- most sources are
+    completely unaffected by this feature; it only engages for genuinely
+    long sources where batching actually saves meaningful calls."""
+    if num_chunks <= target_calls or target_calls <= 0:
+        return 1
+    return math.ceil(num_chunks / target_calls)
+
+
 def chunk_transcript(transcript: Transcript, max_words: int, min_fraction: float = 0.4) -> list[Chunk]:
     """Split into MAP-stage chunks, preferring a detected topic boundary once
     at least ``min_fraction * max_words`` words have accumulated, and always

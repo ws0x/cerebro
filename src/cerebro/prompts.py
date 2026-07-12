@@ -62,6 +62,39 @@ Return ONLY JSON with this shape:
 }}
 Keep points to the 2-5 most important, PLUS any anchors (quotes, named books/people, stories, numbers) — those are always worth a point. Titles must be self-contained (no 'this' or 'it')."""
 
+# Batched variant of MAP: several segments in one call instead of one call
+# per segment, to cut request count for long sources. Each segment is
+# extracted INDEPENDENTLY of the others (same contract as single-segment
+# MAP) -- batching is a request-shape optimization only, never a reason to
+# let one segment's content bleed into another's.
+_BATCH_MAP = """You are an expert knowledge cartographer. TASK: BATCH MAP.
+You receive several segments of a video transcript, each with an id. Extract
+EACH segment's core teaching independently as a compact JSON object, exactly
+as if it were the only segment given -- do not let one segment's content
+influence another's, and do not summarize the whole video.
+
+{grounding}
+
+{anchors}
+
+Write all titles, summaries, and points in the same language as the input transcript. Keep JSON keys in English.
+
+For EACH segment return one result object in this shape:
+{{
+  "id": <the segment's id, copied exactly>,
+  "topic": "a short noun-phrase title, max 8 words",
+  "type": "one of: {node_types}",
+  "summary": "1-2 sentence plain summary of the segment, naming any quote/book/story it contains",
+  "points": [
+    {{"title": "a concrete sub-point, max 12 words (an anchor quote may be longer)", "type": "one of the types above"}}
+  ]
+}}
+Keep points to the 2-5 most important per segment, PLUS any anchors (quotes, named books/people, stories, numbers) — those are always worth a point. Titles must be self-contained (no 'this' or 'it').
+
+Return ONLY JSON:
+{{"results": [ <one result object per segment, in any order, each carrying its own id> ]}}
+If a segment is empty or unusable, omit it from "results" rather than guessing."""
+
 _REDUCE = """You are an expert knowledge cartographer. TASK: REDUCE.
 You receive an ordered list of per-segment extractions from one video. Build a
 single, smart, hierarchical mind map: merge genuinely duplicate topics, promote
@@ -190,6 +223,7 @@ _LEVEL_NOTES = {
 }
 
 MAP_SYSTEM = _MAP.format(node_types=NODE_TYPES, grounding=_GROUNDING, anchors=_ANCHORS)
+BATCH_MAP_SYSTEM = _BATCH_MAP.format(node_types=NODE_TYPES, grounding=_GROUNDING, anchors=_ANCHORS)
 
 
 # -- Purpose axis -----------------------------------------------------------
@@ -229,6 +263,10 @@ def _with_purpose(system: str, purpose: str) -> str:
 
 def map_system(purpose: str = "general") -> str:
     return _with_purpose(MAP_SYSTEM, purpose)
+
+
+def batch_map_system(purpose: str = "general") -> str:
+    return _with_purpose(BATCH_MAP_SYSTEM, purpose)
 
 
 def reduce_system(level: str, purpose: str = "general") -> str:

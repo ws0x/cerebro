@@ -225,6 +225,14 @@ def _structure(transcript, level, provider, cache, relationship_limit=8, synthes
         def on_event(kind, **d):
             if kind == "map_start":
                 progress.update(task, description="Mapping segments", total=d["total"], completed=0)
+            elif kind == "map_resumed":
+                # Printed via progress.console (not progress.update) so it
+                # survives after the transient progress bar clears -- a
+                # retry after a partial failure should visibly say so, not
+                # look identical to a from-scratch run.
+                progress.console.print(
+                    f"[dim]  ↻ Resuming: {d['cached']}/{d['total']} segments already cached from a previous attempt.[/]"
+                )
             elif kind == "map_progress":
                 progress.update(task, completed=d["done"])
             elif kind == "reduce_start":

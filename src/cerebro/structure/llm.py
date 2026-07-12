@@ -24,6 +24,7 @@ from ..llm.base import LLMError, LLMProvider
 from ..prompts import (
     HEADING_POLISH_SYSTEM,
     PROMPT_VERSION,
+    batch_map_system,
     cross_link_system,
     link_system,
     map_system,
@@ -33,7 +34,7 @@ from ..prompts import (
 from ..transcript import Transcript
 from .anchors import verify_and_repair_anchors
 from .enumeration import EnumeratedSection, detect_enumeration
-from .segment import Chunk, adaptive_max_words, chunk_transcript
+from .segment import Chunk, adaptive_batch_size, adaptive_max_words, chunk_transcript
 from .synthesis import add_synthesis
 
 _INTRO_MIN_WORDS = 40  # a pre-#1 intro shorter than this isn't worth an Overview branch
@@ -216,25 +217,90 @@ class LLMStructurer:
         return result
 
     # -- pipeline stages ------------------------------------------------------
+    def _map_cache_key(self, chunk_text: str, level: str) -> str:
+        return Cache.key(self.provider.name, self.provider.model, PROMPT_VERSION, "map", level, chunk_text, *self._pk)
+
     def _map_chunk(self, index: int, chunk: Chunk, level: str) -> dict:
         result = self._call("map", map_system(self.purpose), chunk.text, level, chunk.text, *self._pk)
         result["t"] = int(chunk.start)
         return result
 
+    def _map_batch_call(self, batch: list[tuple[int, Chunk]], level: str) -> dict[int, dict]:
+        """One API call covering several chunks -- cuts request count for
+        long sources. Returns {original_index: result} for whichever
+        segments the model actually returned; a malformed or missing entry
+        for one segment doesn't affect the others. Each result is cached
+        under the SAME per-chunk key the single-chunk path would use, so a
+        future run -- batched or not -- gets full resumability regardless of
+        which path produced this result."""
+        segments = [{"id": pos, "text": chunk.text} for pos, (_, chunk) in enumerate(batch)]
+        user = json.dumps({"segments": segments}, ensure_ascii=False)
+        batch_key = "|".join(chunk.text for _, chunk in batch)
+        try:
+            result = self._call("map_batch", batch_map_system(self.purpose), user, level, batch_key, *self._pk)
+        except LLMError as exc:
+            self.on_event("map_error", error=f"batch of {len(batch)} segments failed: {exc}")
+            return {}
+
+        out: dict[int, dict] = {}
+        for item in result.get("results", []) or []:
+            if not isinstance(item, dict):
+                continue
+            pos = item.get("id")
+            if not isinstance(pos, int) or not (0 <= pos < len(batch)):
+                continue
+            orig_index, chunk = batch[pos]
+            parsed = {k: v for k, v in item.items() if k != "id"}
+            parsed["t"] = int(chunk.start)
+            out[orig_index] = parsed
+            self.cache.set(self._map_cache_key(chunk.text, level), parsed)
+        return out
+
+    def _run_one_batch(self, batch: list[tuple[int, Chunk]], level: str) -> dict[int, dict]:
+        if len(batch) == 1:
+            # Degenerate case: reuse the exact single-chunk path, prompt, and
+            # cache task unchanged -- most sources never batch at all (see
+            # adaptive_batch_size), so their behavior stays byte-for-byte
+            # what it was before this feature existed.
+            i, chunk = batch[0]
+            try:
+                return {i: self._map_chunk(i, chunk, level)}
+            except LLMError as exc:
+                self.on_event("map_error", index=i, error=str(exc))
+                return {}
+        return self._map_batch_call(batch, level)
+
     def _map(self, chunks: list[Chunk], level: str) -> list[dict]:
         self.on_event("map_start", total=len(chunks))
+
+        # Resumability: check each chunk against the cache BEFORE deciding
+        # batch membership, so a retry after a partial failure (e.g. quota
+        # exhausted mid-run) only ever pays for genuinely new work, and a
+        # batch never wastes a slot on a chunk that's already done.
         results: dict[int, dict] = {}
-        with ThreadPoolExecutor(max_workers=self.max_workers) as pool:
-            futures = {
-                pool.submit(self._map_chunk, i, c, level): i for i, c in enumerate(chunks)
-            }
-            for fut in as_completed(futures):
-                i = futures[fut]
-                try:
-                    results[i] = fut.result()
-                except LLMError as exc:
-                    self.on_event("map_error", index=i, error=str(exc))
-                self.on_event("map_progress", done=len(results), total=len(chunks))
+        todo: list[tuple[int, Chunk]] = []
+        for i, c in enumerate(chunks):
+            cached = self.cache.get(self._map_cache_key(c.text, level))
+            if cached is not None:
+                results[i] = {**cached, "t": int(c.start)}
+                self.on_event("cache_hit", task="map")
+            else:
+                todo.append((i, c))
+
+        if todo and len(todo) < len(chunks):
+            self.on_event("map_resumed", cached=len(chunks) - len(todo), total=len(chunks))
+        if results:
+            self.on_event("map_progress", done=len(results), total=len(chunks))
+
+        if todo:
+            batch_size = adaptive_batch_size(len(todo))
+            batches = [todo[i : i + batch_size] for i in range(0, len(todo), batch_size)]
+            with ThreadPoolExecutor(max_workers=self.max_workers) as pool:
+                futures = {pool.submit(self._run_one_batch, b, level): b for b in batches}
+                for fut in as_completed(futures):
+                    results.update(fut.result())
+                    self.on_event("map_progress", done=len(results), total=len(chunks))
+
         ordered = [results[i] for i in sorted(results)]
         if not ordered:
             raise LLMError("All MAP calls failed; cannot build a map.")

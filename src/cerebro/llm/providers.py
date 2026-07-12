@@ -8,6 +8,7 @@ pipeline and cache are testable with no key and no network.
 
 from __future__ import annotations
 
+import json
 import os
 
 from .base import LLMError, RateLimiter, parse_json, post_json
@@ -103,6 +104,24 @@ class MockProvider:
 
     def complete_json(self, system: str, user: str) -> dict:
         self.calls += 1
+        if "TASK: BATCH MAP" in system:
+            # Checked before "TASK: MAP" since that's a substring of this tag.
+            payload = json.loads(user)
+            return {
+                "results": [
+                    {
+                        "id": seg["id"],
+                        "topic": "Key idea from segment",
+                        "type": "concept",
+                        "summary": "A concise summary of this segment.",
+                        "points": [
+                            {"title": "Supporting point one", "type": "detail"},
+                            {"title": "Supporting point two", "type": "example"},
+                        ],
+                    }
+                    for seg in payload.get("segments", [])
+                ]
+            }
         if "TASK: MAP" in system:
             return {
                 "topic": "Key idea from segment",

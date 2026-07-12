@@ -1,5 +1,5 @@
 import pytest
-from cerebro.structure.segment import adaptive_max_words, chunk_transcript, cohesion_scores
+from cerebro.structure.segment import adaptive_batch_size, adaptive_max_words, chunk_transcript, cohesion_scores
 from cerebro.transcript import Segment, Transcript
 
 _PHOTOSYNTHESIS = [
@@ -126,3 +126,26 @@ def test_adaptive_chunking_caps_the_call_count_for_a_long_transcript():
 
     assert adaptive_chunks < base_chunks  # meaningfully fewer calls
     assert adaptive_chunks <= 35  # bounded near the ~25 target (with slack)
+
+
+# -- adaptive batching (fewer API calls for what remains after chunking) ---
+
+def test_adaptive_batch_size_no_batching_below_the_target():
+    # At or under the target call count, every chunk gets its own call --
+    # most sources never batch at all.
+    assert adaptive_batch_size(5) == 1
+    assert adaptive_batch_size(9) == 1
+
+
+def test_adaptive_batch_size_groups_chunks_above_the_target():
+    # 20 chunks / target 9 -> batch_size 3 -> ceil(20/3) = 7 calls, well
+    # under 20 and near the 9-call target.
+    size = adaptive_batch_size(20, target_calls=9)
+    assert size > 1
+    import math
+    assert math.ceil(20 / size) <= 9 or size == math.ceil(20 / 9)
+
+
+def test_adaptive_batch_size_handles_degenerate_inputs():
+    assert adaptive_batch_size(0) == 1
+    assert adaptive_batch_size(100, target_calls=0) == 1

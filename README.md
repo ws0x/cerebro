@@ -882,11 +882,22 @@ a lot of content, and free API tiers are limited two ways: **per-minute**
 handles both:
 
 - **Adaptive chunking** automatically uses bigger chunks for long sources, so
-  the number of API calls stays bounded (~25) instead of scaling with length —
-  a 2-hour video is ~25 calls, not ~60. (This reduces the *number* of calls,
-  which fixes the per-minute storms and per-day request caps. It does *not*
-  reduce total *tokens* — the video's content is the same size however it's
-  chunked, so a long video still consumes real daily token budget.)
+  the number of chunks stays bounded (~25) instead of scaling with length —
+  a 2-hour video is ~25 chunks, not ~60. (This reduces the *number* of
+  chunks. It does *not* reduce total *tokens* — the video's content is the
+  same size however it's chunked, so a long video still consumes real daily
+  token budget.)
+- **Adaptive batching** goes further: when there are still more chunks than
+  a handful of calls can comfortably cover, several are grouped into ONE API
+  call instead of one call each — a ~25-chunk video becomes ~9 calls, not
+  ~25. Caching stays per-chunk underneath, so this is purely a request-shape
+  optimization; a source under the batching threshold is completely
+  unaffected (still exactly one call per chunk).
+- **Resumable retries.** Every chunk's result is cached individually, so if
+  a run fails partway through (quota exhausted mid-video), rerunning doesn't
+  start over — it picks up only the chunks that didn't finish. cerebro tells
+  you this is happening ("Resuming: 14/20 segments already cached from a
+  previous attempt") instead of it being invisible.
 - **Request pacing** spaces calls under each provider's per-minute limit so a
   run never bursts into a 429 storm — it just runs a bit slower and completes
   reliably. Tune it with `CEREBRO_GROQ_MIN_INTERVAL` / `CEREBRO_GEMINI_MIN_INTERVAL`
