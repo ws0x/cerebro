@@ -170,9 +170,6 @@ def cross_link_system(limit: int) -> str:
     return _CROSS_LINK_TEMPLATE.format(limit=limit)
 
 
-# For backward compatibility
-LINK_SYSTEM = link_system(8)
-
 # Per-level guidance injected into the REDUCE prompt. Each level is a genuinely
 # different cognitive job, not just a bigger/smaller tree:
 #   brief  = advance organizer (survey before watching / gist after)
