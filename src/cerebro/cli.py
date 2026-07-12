@@ -135,7 +135,7 @@ def _emit_result(payload: dict) -> None:
         print(json.dumps(payload, ensure_ascii=False))
 
 
-def _structure(transcript, level, provider, cache, relationship_limit=8) -> tuple:
+def _structure(transcript, level, provider, cache, relationship_limit=8, synthesize=True) -> tuple:
     """Returns (map, used_heuristic_fallback). used_heuristic_fallback is True
     only when an LLM engine was requested but every call failed and the result
     is actually the deterministic heuristic map -- the caller needs this to
@@ -147,7 +147,7 @@ def _structure(transcript, level, provider, cache, relationship_limit=8) -> tupl
         # skips reduce entirely rather than asking an LLM to reinvent it.
         # _structure_document has its own (map, used_fallback) contract, same
         # shape as this function, so it's returned straight through.
-        return _structure_document(transcript, level, provider, cache, relationship_limit)
+        return _structure_document(transcript, level, provider, cache, relationship_limit, synthesize)
 
     if provider is None:
         with _spinner(f"Structuring ({level})…"):
@@ -174,11 +174,13 @@ def _structure(transcript, level, provider, cache, relationship_limit=8) -> tupl
                 progress.update(task, description="Reducing into a hierarchy", total=1, completed=0)
             elif kind == "anchor_check":
                 progress.update(task, description="Recovering dropped anchors", total=1, completed=0)
+            elif kind == "synthesis_start":
+                progress.update(task, description="Synthesizing key takeaways", total=1, completed=0)
             elif kind == "link_start":
                 progress.update(task, description="Detecting cross-links", total=1, completed=0)
 
         structurer = LLMStructurer(
-            provider, cache, on_event=on_event, relationship_limit=relationship_limit
+            provider, cache, on_event=on_event, relationship_limit=relationship_limit, synthesize=synthesize
         )
         try:
             mm = structurer.structure(transcript, level=level)
@@ -190,7 +192,7 @@ def _structure(transcript, level, provider, cache, relationship_limit=8) -> tupl
         return mm, False
 
 
-def _structure_document(transcript, level, provider, cache, relationship_limit=8) -> tuple:
+def _structure_document(transcript, level, provider, cache, relationship_limit=8, synthesize=True) -> tuple:
     """Outline-bearing source path (see structure/document.py): the hierarchy
     is already known, so the LLM (if any) only enriches section content and,
     at expert level, detects cross-section relationships. A single failed
@@ -221,6 +223,8 @@ def _structure_document(transcript, level, provider, cache, relationship_limit=8
                 progress.update(task, completed=d["done"])
             elif kind == "anchor_check":
                 progress.update(task, description="Recovering dropped anchors", total=1, completed=0)
+            elif kind == "synthesis_start":
+                progress.update(task, description="Synthesizing key takeaways", total=1, completed=0)
             elif kind == "link_start":
                 progress.update(task, description="Detecting cross-links", total=1, completed=0)
 
@@ -232,6 +236,7 @@ def _structure_document(transcript, level, provider, cache, relationship_limit=8
                 level=level,
                 on_event=on_event,
                 relationship_limit=relationship_limit,
+                synthesize=synthesize,
             )
         except LLMError as exc:
             progress.stop()
@@ -351,10 +356,11 @@ def map(
     preview: bool = typer.Option(True, "--preview/--no-preview", help="Show the map in-terminal."),
     whisper_model: str = typer.Option(None, "--whisper-model", help="Whisper model size for videos with no subtitle track: tiny | base | small | medium | large-v2 | large-v3 (default: base, or your saved config) -- bigger is slower but more accurate."),
     relationship_limit: int = typer.Option(None, "--relationship-limit", "--rel-limit", help="Max number of relationships to detect in expert mode."),
+    no_synthesis: bool = typer.Option(False, "--no-synthesis", help="Skip the added 'Key Takeaways' branch that structured sources (PDF/numbered-list) get at full/expert."),
     yes: bool = typer.Option(False, "--yes", "-y", help="Overwrite an existing output file without asking."),
 ):
     """Build a mind map from SOURCE and write it to disk."""
-    _do_map(source, level, fmt, out, engine, no_cache, preview, whisper_model, relationship_limit, yes)
+    _do_map(source, level, fmt, out, engine, no_cache, preview, whisper_model, relationship_limit, yes, no_synthesis=no_synthesis)
 
 
 def _do_map(
@@ -368,12 +374,16 @@ def _do_map(
     whisper_model: str | None = None,
     relationship_limit: int | None = None,
     yes: bool = False,
+    no_synthesis: bool = False,
 ) -> None:
     config = load_config()
     level = level or config.get("level") or "full"
     fmt = fmt or config.get("format") or "opml"
     engine = engine or config.get("engine") or "auto"
     whisper_model = whisper_model or config.get("whisper_model") or "base"
+    # Synthesis is on by default; --no-synthesis or a persisted synthesis=off
+    # disables it. Only structured sources (PDF/enumerated) ever act on it.
+    synthesize = (not no_synthesis) and str(config.get("synthesis", "on")).lower() != "off"
 
     if relationship_limit is None:
         cfg_lim = config.get("relationship_limit")
@@ -423,7 +433,7 @@ def _do_map(
     if provider is None and engine == "auto":
         qprint("[yellow]![/] No API key found — using the offline heuristic engine.")
 
-    mm, used_fallback = _structure(transcript, level, provider, cache, relationship_limit=relationship_limit)
+    mm, used_fallback = _structure(transcript, level, provider, cache, relationship_limit=relationship_limit, synthesize=synthesize)
     if used_fallback:
         engine_label = "heuristic (offline)"
     qprint(
@@ -1304,9 +1314,10 @@ _CONFIG_KEYS: dict[str, tuple[tuple[str, ...] | None, str]] = {
     "whisper_model": (("tiny", "base", "small", "medium", "large-v2", "large-v3"), "base"),
     "relationship_limit": (None, "8"),
     "output_dir": (None, "~/cerebro-maps"),
+    "synthesis": (("on", "off"), "on"),
 }
 
-_CONFIG_KEY_HELP = "level | format | engine | whisper_model | relationship_limit | output_dir"
+_CONFIG_KEY_HELP = "level | format | engine | whisper_model | relationship_limit | output_dir | synthesis"
 
 
 @config_app.command("list")

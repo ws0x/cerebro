@@ -27,6 +27,7 @@ from ..transcript import Transcript
 from .anchors import verify_and_repair_anchors
 from .heuristic import HeuristicStructurer
 from .llm import LLMStructurer, link_relationships
+from .synthesis import add_synthesis
 
 _NOTE_LIMIT = 500  # matches structure/heuristic.py's own truncate limit
 _MAX_WORDS = {"brief": 2000, "full": 1400, "expert": 1200}  # matches structure/llm.py's budget
@@ -179,6 +180,7 @@ def build_outline_map(
     on_event: Callable[..., None] | None = None,
     relationship_limit: int = 8,
     max_workers: int = 6,
+    synthesize: bool = True,
 ) -> MindMap:
     """Build the deterministic skeleton, then -- given a provider, and above
     brief level (brief stays free even with a key configured, matching its
@@ -214,6 +216,9 @@ def build_outline_map(
 
     verify_and_repair_anchors(mm, transcript.full_text, provider, cache, level, on_event=on_event)
 
+    if synthesize:
+        add_synthesis(mm, provider, cache, level, on_event=on_event)
+
     if level == "expert":
         link_relationships(
             mm, provider, cache, on_event=on_event, relationship_limit=relationship_limit
@@ -246,11 +251,13 @@ class OutlineAwareStructurer:
         cache: Cache,
         relationship_limit: int = 8,
         max_workers: int = 6,
+        synthesize: bool = True,
     ):
         self.provider = provider
         self.cache = cache
         self.relationship_limit = relationship_limit
         self.max_workers = max_workers
+        self.synthesize = synthesize
 
     def structure(self, transcript: Transcript, level: str = "full") -> MindMap:
         if transcript.outline:
@@ -261,6 +268,7 @@ class OutlineAwareStructurer:
                 level=level,
                 relationship_limit=self.relationship_limit,
                 max_workers=self.max_workers,
+                synthesize=self.synthesize,
             )
         if self.provider is None:
             return HeuristicStructurer().structure(transcript, level=level)
@@ -269,4 +277,5 @@ class OutlineAwareStructurer:
             self.cache,
             max_workers=self.max_workers,
             relationship_limit=self.relationship_limit,
+            synthesize=self.synthesize,
         ).structure(transcript, level=level)

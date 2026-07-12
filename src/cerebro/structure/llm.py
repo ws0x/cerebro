@@ -34,6 +34,7 @@ from ..transcript import Transcript
 from .anchors import verify_and_repair_anchors
 from .enumeration import EnumeratedSection, detect_enumeration
 from .segment import Chunk, chunk_transcript
+from .synthesis import add_synthesis
 
 _INTRO_MIN_WORDS = 40  # a pre-#1 intro shorter than this isn't worth an Overview branch
 _SECTION_NOTE_FALLBACK_CHARS = 400  # deterministic note when a section's LLM fill fails
@@ -184,12 +185,16 @@ class LLMStructurer:
         max_workers: int = 6,
         on_event: Callable[..., None] | None = None,
         relationship_limit: int = 8,
+        synthesize: bool = True,
     ):
         self.provider = provider
         self.cache = cache or Cache(enabled=False)
         self.max_workers = max_workers
         self.on_event = on_event or (lambda *a, **k: None)
         self.relationship_limit = relationship_limit
+        # Synthesis applies only to the enumerated (author-numbered) path here
+        # -- the free-form flat path already gets REDUCE, which does this job.
+        self.synthesize = synthesize
 
     # -- cached provider call -------------------------------------------------
     def _call(self, task: str, system: str, user: str, *key_parts) -> dict:
@@ -420,6 +425,8 @@ class LLMStructurer:
         verify_and_repair_anchors(
             mm, transcript.full_text, self.provider, self.cache, level, on_event=self.on_event
         )
+        if self.synthesize:
+            add_synthesis(mm, self.provider, self.cache, level, on_event=self.on_event)
         if level == "expert":
             link_relationships(
                 mm, self.provider, self.cache, on_event=self.on_event, relationship_limit=self.relationship_limit

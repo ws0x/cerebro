@@ -296,3 +296,39 @@ Return ONLY JSON:
 Return an empty "repairs" list if no candidate is a genuine missing anchor."""
 
 ANCHOR_REPAIR_SYSTEM = _ANCHOR_REPAIR.format(node_types=NODE_TYPES)
+
+
+# -- Synthesis (structured sources) -----------------------------------------
+
+# Structured sources (a PDF's TOC, an author-numbered video) keep their own
+# spine verbatim -- faithful, but a bare TOC + per-section bullets has no
+# cross-cutting layer, so the source's actual thesis can sit buried as a leaf
+# under some late section. This ADDITIVE pass appends one "Key Takeaways"
+# branch that synthesizes ACROSS sections; it never edits the author's spine.
+_SYNTHESIS = """You are an expert knowledge cartographer. TASK: SYNTHESIZE.
+You receive a mind map built faithfully from a source's own structure (its
+chapters/sections, or its author-numbered list). That structure is FIXED and
+you must NOT repeat or restate it.
+
+Produce a short "Key Takeaways" section: the big-picture conclusions and
+cross-cutting connections a reader should walk away with — the single most
+important thesis of the whole source, plus the points that span MULTIPLE
+sections (a cause running across chapters, a recurring principle, the payoff
+the sections build toward).
+
+{grounding}
+
+Do NOT summarize section by section. Synthesize ACROSS sections. Aim for 3-5
+takeaways. If the map is genuinely too thin to synthesize anything
+cross-cutting, return an empty list rather than padding it.
+
+Write in the same language as the node titles. Keep JSON keys in English.
+
+Return ONLY JSON:
+{{
+  "takeaways": [
+    {{"title": "a crisp takeaway, max 12 words", "note": "one sentence on why it matters across the whole source", "type": "one of: {node_types}"}}
+  ]
+}}"""
+
+SYNTHESIS_SYSTEM = _SYNTHESIS.format(node_types=NODE_TYPES, grounding=_GROUNDING)

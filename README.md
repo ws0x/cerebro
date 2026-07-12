@@ -750,9 +750,23 @@ cerebro config unset level      # revert to the built-in default
 
 Persists to `~/.cerebro/config.json` — the same file `map`/`batch`/`tree`
 already read defaults from, previously only editable by hand. Keys: `level`,
-`format`, `engine`, `whisper_model`, `relationship_limit`, `output_dir`.
-`set` validates the value against that key's allowed choices before writing
-(`output_dir` is a free-form path, not a fixed choice).
+`format`, `engine`, `whisper_model`, `relationship_limit`, `output_dir`,
+`synthesis`. `set` validates the value against that key's allowed choices
+before writing (`output_dir` is a free-form path, not a fixed choice).
+
+## Key Takeaways synthesis (structured sources)
+
+A source with its own structure — a PDF's table of contents, or a video
+that's an explicit numbered list ("7 habits") — keeps that structure
+verbatim: cerebro never dissolves the author's own spine. But a faithful
+table-of-contents map can leave the source's actual *thesis* buried as a
+leaf under some late section. So at `full`/`expert`, structured-source maps
+get one **additive** `Key Takeaways` branch appended at the end: the
+overarching point plus the cross-cutting connections that span sections. It
+never edits the author's structure — only adds. Turn it off per-run with
+`--no-synthesis`, or persistently with `cerebro config set synthesis off`.
+(Video/article transcripts don't get this — their free-form pipeline already
+builds a synthesized hierarchy.)
 
 ## Diagnosing your setup (`cerebro doctor`)
 

@@ -104,7 +104,11 @@ def test_build_outline_map_brief_level_skips_ai_even_with_provider():
 def test_build_outline_map_full_level_enriches_leaves():
     transcript = _two_chapter_transcript()
     provider = MockProvider()
-    mm = build_outline_map(transcript, provider=provider, cache=Cache(enabled=False), level="full")
+    # synthesize=False isolates the enrichment-call count from the separate
+    # synthesis pass (which would add its own call).
+    mm = build_outline_map(
+        transcript, provider=provider, cache=Cache(enabled=False), level="full", synthesize=False
+    )
     leaf = mm.root.children[0]
     assert leaf.note == "A concise summary of this segment."
     assert [c.title for c in leaf.children] == ["Supporting point one", "Supporting point two"]
