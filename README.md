@@ -876,6 +876,21 @@ specific engine (`--engine groq`) but didn't set that key. Either add it to
 `.env`, or use `--engine auto` to let cerebro pick whatever's available (or
 fall back to offline).
 
+**"This is a long source — building at X will need ~N LLM calls"** — a
+pre-flight estimate, printed before any calls are spent, when a source is long
+enough to risk exhausting a free-tier daily quota (Groq's free tier caps at
+100,000 tokens/day — a single long podcast-length video can burn through a
+meaningful share of that on its own). Not a hard block, just a heads-up:
+consider a lower `--level`, `--engine gemini` (a separate quota), or
+`--engine heuristic`.
+
+**The map degraded to the heuristic engine and I didn't notice until it was
+done** — a total LLM failure (including a daily-quota 429, which fails fast
+rather than retrying uselessly) now prints a bordered "Degraded to heuristic"
+panel, and the final Done summary always shows which **Engine** actually built
+the map (yellow when it's heuristic) — not just a single line that can scroll
+away during a multi-minute build.
+
 **No API key found — using the offline heuristic engine, even though I set a
 key** — cerebro checks the current directory's `.env` first, then
 `~/.cerebro/.env`. This almost always means the key ended up in whichever one

@@ -68,6 +68,7 @@ from .search import search_maps
 from .structure import HeuristicStructurer
 from .structure.document import OutlineAwareStructurer, build_outline_map, build_outline_skeleton
 from .structure.llm import LLMStructurer, link_relationships
+from .structure.segment import chunk_transcript
 from .ui import banner, print_banner, print_preview
 from .wizard import QSTYLE, run_wizard
 
@@ -147,6 +148,35 @@ def _print_fallback_warning(exc: Exception) -> None:
             expand=False,
         )
     )
+
+
+# Mirrors structure/llm.py's / structure/document.py's own per-level word
+# budget (same duplication those two already accept, with the same reason:
+# a tiny, stable constant not worth a cross-module import for).
+_MAX_WORDS = {"brief": 2000, "full": 1400, "expert": 1200}
+
+# Above this many estimated LLM calls, warn before spending any of them --
+# free-tier daily quotas (Groq: 100k tokens/day) are real and silent
+# exhaustion mid-build degrades an entire map to the heuristic engine with
+# no warning until it's already happened. Live-reproduced: a 131-minute
+# video needed 61 MAP calls and blew through a whole day's Groq quota by
+# itself.
+_MANY_CALLS_THRESHOLD = 20
+
+
+def _estimate_llm_calls(transcript, level: str) -> int:
+    """Best-effort pre-flight estimate of how many LLM calls building this
+    map will need. Exact for the flat MAP->REDUCE path (chunk_transcript is
+    itself free, deterministic, offline); a word-count approximation for
+    outline/enumerated sources, which chunk differently. Undercounting is
+    fine here -- this is a heads-up, not a hard budget."""
+    max_words = _MAX_WORDS.get(level, _MAX_WORDS["full"])
+    if not transcript.outline:
+        num_chunks = len(chunk_transcript(transcript, max_words))
+    else:
+        num_chunks = max(1, -(-transcript.word_count // max_words))  # ceiling division
+    overhead = 2 if level == "expert" else 1  # +reduce/section-fill, +link at expert
+    return num_chunks + overhead
 
 
 def _emit_result(payload: dict) -> None:
@@ -464,6 +494,15 @@ def _do_map(
     engine_label = "heuristic (offline)" if provider is None else f"{provider.name}:{provider.model}"
     if provider is None and engine == "auto":
         qprint("[yellow]![/] No API key found — using the offline heuristic engine.")
+
+    if provider is not None:
+        estimated_calls = _estimate_llm_calls(transcript, level)
+        if estimated_calls > _MANY_CALLS_THRESHOLD:
+            qprint(
+                f"[yellow]![/] This is a long source — building at [bold]{level}[/] will need "
+                f"~{estimated_calls} LLM calls, enough to risk exhausting a free-tier daily quota. "
+                "Consider a lower --level, a different --engine, or --engine heuristic."
+            )
 
     mm, used_fallback = _structure(transcript, level, provider, cache, relationship_limit=relationship_limit, synthesize=synthesize, purpose=purpose)
     if used_fallback:
