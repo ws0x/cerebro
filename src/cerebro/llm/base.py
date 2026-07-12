@@ -52,6 +52,21 @@ def parse_json(content: str) -> dict:
     raise LLMError(f"Could not parse JSON from response: {content[:200]!r}")
 
 
+# A daily-quota 429 ("tokens per day (TPD)", "requests per day (RPD)", or a
+# bare "per day") cannot recover by retrying within the same run -- it only
+# resets tomorrow. Retrying it anyway (as every other 429 correctly does) just
+# burns several minutes of guaranteed-failed backoff per remaining call, which
+# is exactly what happened live: a 61-chunk video hit a daily cap on chunk 11
+# and spent ~6.5 minutes retrying the other 50 chunks before finally giving up.
+_DAILY_LIMIT_RE = re.compile(r"\b(?:tokens|requests)\s+per\s+day\b|\bTPD\b|\bRPD\b|\bper[\s-]day\b", re.IGNORECASE)
+
+
+def _is_daily_limit(resp: requests.Response | None) -> bool:
+    if resp is None or resp.status_code != 429:
+        return False
+    return bool(_DAILY_LIMIT_RE.search(resp.text[:500]))
+
+
 _MAX_RETRY_DELAY = 30.0  # seconds -- a safety cap regardless of exponential backoff or a server's own Retry-After
 
 
@@ -101,6 +116,12 @@ def post_json(
             return resp.json()
         except (requests.RequestException, LLMError) as exc:
             last_exc = exc
+            if _is_daily_limit(resp):
+                raise LLMError(
+                    "Daily quota exhausted (HTTP 429, tokens/requests per day). This won't "
+                    "recover by retrying -- it resets tomorrow. Switch --engine to another "
+                    "provider, or use --engine heuristic to keep going offline right now."
+                ) from exc
             if attempt < retries - 1:
                 delay = _retry_delay(resp, attempt)
                 reason = "rate limited (429)" if last_status == 429 else f"request failed ({exc})"

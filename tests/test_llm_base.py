@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from cerebro.llm.base import LLMError, _retry_delay, parse_json, post_json
+from cerebro.llm.base import LLMError, _is_daily_limit, _retry_delay, parse_json, post_json
 
 
 def _response(status_code, text="", headers=None, json_body=None):
@@ -65,6 +65,46 @@ def test_post_json_gives_a_generic_error_for_non_rate_limit_failures(monkeypatch
     with patch("requests.post", return_value=_response(500, text="server exploded")):
         with pytest.raises(LLMError, match="Request failed after 3 attempts"):
             post_json("http://x", {}, {}, retries=3)
+
+
+def test_is_daily_limit_detects_groqs_actual_error_phrasing():
+    # The exact phrasing live-observed from a real Groq 429 response.
+    resp = _response(
+        429,
+        text='{"error":{"message":"Rate limit reached ... on tokens per day (TPD): Limit 100000, Used 99559"}}',
+    )
+    assert _is_daily_limit(resp)
+
+
+def test_is_daily_limit_false_for_an_ordinary_per_minute_429():
+    resp = _response(429, text='{"error":"rate limit exceeded, try again in 2s"}')
+    assert not _is_daily_limit(resp)
+
+
+def test_is_daily_limit_false_for_non_429_status():
+    resp = _response(500, text="tokens per day")
+    assert not _is_daily_limit(resp)
+
+
+def test_is_daily_limit_false_for_none_response():
+    assert not _is_daily_limit(None)
+
+
+def test_post_json_fails_fast_on_a_daily_limit_without_sleeping(monkeypatch):
+    slept = []
+    monkeypatch.setattr("time.sleep", lambda s: slept.append(s))
+    daily_limit_resp = _response(429, text="tokens per day (TPD): Limit 100000, Used 99559")
+    with patch("requests.post", return_value=daily_limit_resp):
+        with pytest.raises(LLMError, match="Daily quota exhausted"):
+            post_json("http://x", {}, {}, retries=3)
+    assert slept == []  # never slept/retried -- failed on the very first attempt
+
+
+def test_post_json_still_retries_an_ordinary_429_normally(monkeypatch):
+    monkeypatch.setattr("time.sleep", lambda _: None)
+    responses = [_response(429, text="rate limit exceeded"), _response(200, json_body={"ok": True})]
+    with patch("requests.post", side_effect=responses):
+        assert post_json("http://x", {}, {}, retries=3) == {"ok": True}
 
 
 def test_post_json_retries_a_network_exception_not_just_http_errors(monkeypatch):
