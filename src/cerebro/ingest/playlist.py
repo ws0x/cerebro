@@ -10,6 +10,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
+class PlaylistIngestError(RuntimeError):
+    """Raised when a playlist URL can't be listed (private, deleted, geo-blocked, or offline)."""
+
+
 def is_playlist_url(url: str) -> bool:
     return "list=" in url or "/playlist" in url
 
@@ -22,10 +26,20 @@ class PlaylistInfo:
 
 def load_playlist(url: str) -> PlaylistInfo:
     from yt_dlp import YoutubeDL
+    from yt_dlp.utils import DownloadError
 
     opts = {"extract_flat": "in_playlist", "quiet": True, "skip_download": True, "no_warnings": True}
-    with YoutubeDL(opts) as ydl:
-        info = ydl.extract_info(url, download=False)
+    try:
+        with YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+    except DownloadError as exc:
+        raise PlaylistIngestError(
+            f"Could not read playlist {url}: {exc}. It may be private, deleted, "
+            "region-locked, or you may be offline."
+        ) from exc
+
+    if info is None:
+        raise PlaylistIngestError(f"Could not read playlist {url}: no data returned.")
 
     items: list[tuple[str, str]] = []
     for entry in info.get("entries") or []:

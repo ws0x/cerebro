@@ -57,7 +57,7 @@ from .foldermap import (
 )
 from .ingest import load_transcript
 from .ingest.folder import discover_course_sources
-from .ingest.playlist import is_playlist_url, load_playlist
+from .ingest.playlist import PlaylistIngestError, is_playlist_url, load_playlist
 from .llm.base import LLMError
 from .llm.config import ConfigError, load_env, read_env_file, resolve_provider, write_env_file
 from .manifest import lookup as manifest_lookup
@@ -517,8 +517,11 @@ def _do_batch(
 
     transcribe_count = 0
     if is_playlist_url(source):
-        with _spinner("Reading playlist…"):
-            info = load_playlist(source)
+        try:
+            with _spinner("Reading playlist…"):
+                info = load_playlist(source)
+        except PlaylistIngestError as exc:
+            _error(str(exc), fix="Double-check the playlist URL, its visibility, and your network connection.")
         items = [BatchItem(label=t, source=u) for t, u in info.items]
         title = info.title
     elif Path(source).is_dir():
