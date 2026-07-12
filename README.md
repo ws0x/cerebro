@@ -706,6 +706,15 @@ gets relabeled. Every run reports the delta:
 ✓ Labeled 3 folder(s) with groq:llama-3.3-70b-versatile
 ```
 
+If the provider fails partway through (a rate limit, a dropped connection),
+the failed folder(s) keep their heuristic name instead of crashing the run
+or being silently mislabeled — and cerebro tells you how many:
+
+```
+✓ Labeled 2 folder(s) with groq:llama-3.3-70b-versatile
+! 1 folder(s) failed to get an AI label (provider error) — left with their heuristic name only.
+```
+
 Pass `--fresh` to ignore any previous map and rebuild everything from
 scratch (a new snapshot is still saved afterward, so the *next* run can go
 back to being incremental).

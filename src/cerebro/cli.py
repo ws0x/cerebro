@@ -789,6 +789,7 @@ def _do_tree(
     except ConfigError as exc:
         _error(str(exc))
 
+    label_failures = 0
     if provider is not None:
         if nodes_needing_labels:
             cache = Cache(enabled=not no_cache)
@@ -810,11 +811,17 @@ def _do_tree(
                     elif kind == "label_progress":
                         progress.update(task, completed=d["done"])
 
-                label_folders(mm, provider, cache, nodes=nodes_needing_labels, on_event=on_event)
+                label_failures = label_folders(mm, provider, cache, nodes=nodes_needing_labels, on_event=on_event)
+            labeled = len(nodes_needing_labels) - label_failures
             qprint(
-                f"[green]✓[/] Labeled {len(nodes_needing_labels)} folder(s) with "
+                f"[green]✓[/] Labeled {labeled} folder(s) with "
                 f"[bold]{provider.name}:{provider.model}[/]"
             )
+            if label_failures:
+                qprint(
+                    f"[yellow]![/] {label_failures} folder(s) failed to get an AI label "
+                    "(provider error) — left with their heuristic name only."
+                )
         else:
             qprint("[dim]  All folders already labeled from a previous run.[/]")
     elif engine != "heuristic":
@@ -843,7 +850,8 @@ def _do_tree(
         "added": len(diff.added) if diff is not None else None,
         "changed": len(diff.changed) if diff is not None else None,
         "deleted": len(diff.deleted) if diff is not None else None,
-        "labeled": len(nodes_needing_labels) if provider is not None else 0,
+        "labeled": (len(nodes_needing_labels) - label_failures) if provider is not None else 0,
+        "label_failures": label_failures,
         "engine": engine,
     })
 

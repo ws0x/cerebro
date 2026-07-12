@@ -411,7 +411,7 @@ def label_folders(
     nodes: list[Node] | None = None,
     max_workers: int = 6,
     on_event: Callable[..., None] | None = None,
-) -> None:
+) -> int:
     """Optionally enrich each folder node with an inferred one-line purpose,
     based on its name and immediate contents. The folder's own name is left
     as the node title (still the most useful thing for navigation) — the
@@ -421,15 +421,21 @@ def label_folders(
     for incremental rebuilds, where unchanged folders already carry a label
     from a previous run and shouldn't be redundantly relabeled). Defaults to
     every folder in the tree.
+
+    Returns how many folders failed to get an AI label (an LLMError on that
+    specific call) -- distinct from folders that were never attempted at
+    all (excluded via ``nodes``). A per-folder failure was previously
+    swallowed silently, so a run with a partial provider outage produced an
+    all-heuristic-looking tree with no indication anything actually failed.
     """
     on_event = on_event or (lambda *a, **k: None)
     folders = nodes if nodes is not None else [n for n in mm.root.walk() if n.type == NodeType.topic]
     if not folders:
-        return
+        return 0
 
     on_event("label_start", total=len(folders))
 
-    def _label_one(node: Node) -> None:
+    def _label_one(node: Node) -> bool:
         listing = [c.title for c in node.children[:25]]
         payload = {"folder": node.title, "contents": listing}
         user = json.dumps(payload, ensure_ascii=False)
@@ -439,16 +445,23 @@ def label_folders(
             try:
                 result = provider.complete_json(FOLDER_LABEL_SYSTEM, user)
             except LLMError:
-                return
+                return False
             cache.set(key, result)
         label = str(result.get("label", "")).strip()
         if label:
             node.note = label
+        return True
 
+    failed = 0
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         futures = [pool.submit(_label_one, n) for n in folders]
         done = 0
         for fut in as_completed(futures):
-            fut.result()
+            if not fut.result():
+                failed += 1
             done += 1
             on_event("label_progress", done=done, total=len(folders))
+
+    if failed:
+        on_event("label_failures", failed=failed, total=len(folders))
+    return failed

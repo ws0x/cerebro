@@ -10,6 +10,7 @@ from cerebro.foldermap import (
     list_tree_snapshots,
 )
 from cerebro.ir import NodeType
+from cerebro.llm.base import LLMError
 from cerebro.llm.providers import MockProvider
 
 
@@ -331,6 +332,74 @@ def test_label_folders_skips_when_no_folders(tmp_path, tmp_path_factory):
     provider = MockProvider()
     label_folders(mm, provider, Cache(enabled=False), nodes=nodes)
     assert provider.calls == 0
+
+
+class _PartiallyFailingLabelProvider:
+    """Raises LLMError for one specific folder name, succeeds for the rest --
+    simulates a provider hiccup partway through a batch of labeling calls."""
+
+    name = "flaky"
+    model = "flaky-1"
+
+    def __init__(self, fails_for: str):
+        self.fails_for = fails_for
+        self.calls = 0
+
+    def complete_json(self, system: str, user: str) -> dict:
+        self.calls += 1
+        folder = json.loads(user)["folder"]
+        if folder == self.fails_for:
+            raise LLMError("simulated provider outage")
+        return {"label": f"Purpose of {folder}"}
+
+
+def test_label_folders_returns_the_failure_count(tmp_path, tmp_path_factory):
+    project = _make_project(tmp_path)
+    mm, _, nodes = _map(project, tmp_path_factory)
+    provider = _PartiallyFailingLabelProvider(fails_for="auth")
+    cache = Cache(enabled=False)
+
+    failed = label_folders(mm, provider, cache, nodes=nodes)
+
+    assert failed == 1
+    auth_node = next(n for n in mm.root.walk() if n.title == "auth")
+    # Left with whatever heuristic note it already had (never crashes), but
+    # crucially not silently overwritten with a fabricated AI label.
+    assert auth_node.note != "Purpose of auth"
+    src_node = next(n for n in mm.root.walk() if n.title == "src")
+    assert src_node.note == "Purpose of src"  # the other folders still succeeded
+
+
+def test_label_folders_returns_zero_when_everything_succeeds(tmp_path, tmp_path_factory):
+    project = _make_project(tmp_path)
+    mm, _, nodes = _map(project, tmp_path_factory)
+    provider = _LabelStubProvider()
+
+    failed = label_folders(mm, provider, Cache(enabled=False), nodes=nodes)
+
+    assert failed == 0
+
+
+def test_label_folders_emits_a_label_failures_event_only_when_something_failed(tmp_path, tmp_path_factory):
+    project = _make_project(tmp_path)
+    mm, _, nodes = _map(project, tmp_path_factory)
+    events = []
+
+    label_folders(
+        mm, _LabelStubProvider(), Cache(enabled=False), nodes=nodes,
+        on_event=lambda kind, **d: events.append((kind, d)),
+    )
+    assert "label_failures" not in [kind for kind, _ in events]
+
+    mm2, _, nodes2 = _map(project, tmp_path_factory)
+    events2 = []
+    label_folders(
+        mm2, _PartiallyFailingLabelProvider(fails_for="auth"), Cache(enabled=False), nodes=nodes2,
+        on_event=lambda kind, **d: events2.append((kind, d)),
+    )
+    failure_events = [d for kind, d in events2 if kind == "label_failures"]
+    assert len(failure_events) == 1
+    assert failure_events[0]["failed"] == 1
 
 
 def test_label_folders_default_labels_whole_tree_when_nodes_not_given(tmp_path, tmp_path_factory):
