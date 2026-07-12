@@ -73,3 +73,17 @@ def test_mock_returns_a_single_item_chain():
     chain = resolve_provider_chain("mock")
     assert len(chain) == 1
     assert isinstance(chain[0], MockProvider)
+
+
+def test_gemini_default_model_is_the_self_updating_latest_alias(monkeypatch):
+    # Regression test: a dated model snapshot ("gemini-2.5-flash") can get
+    # retired for NEW API keys/projects specifically (live-observed: a 404
+    # "no longer available to new users", even though the model was still
+    # listed by the API). "-latest" is Google's self-updating alias, chosen
+    # specifically to avoid this class of failure recurring.
+    monkeypatch.setenv("GEMINI_API_KEY", "gem-key")
+    chain = resolve_provider_chain("gemini")
+    assert chain[0].model == "gemini-flash-latest"
+
+    chain_auto = resolve_provider_chain("auto")
+    assert chain_auto[0].model == "gemini-flash-latest"

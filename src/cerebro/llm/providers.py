@@ -67,7 +67,7 @@ class GeminiProvider:
 
     name = "gemini"
 
-    def __init__(self, api_key: str, model: str = "gemini-2.5-flash", min_interval: float | None = None):
+    def __init__(self, api_key: str, model: str = "gemini-flash-latest", min_interval: float | None = None):
         self.api_key = api_key
         self.model = model
         self._limiter = RateLimiter(_GEMINI_MIN_INTERVAL if min_interval is None else min_interval)

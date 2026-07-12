@@ -13,6 +13,15 @@ from pathlib import Path
 from ..paths import GLOBAL_ENV_PATH
 from .providers import GeminiProvider, GroqProvider, MockProvider
 
+# Google periodically retires a specific dated model snapshot for NEW
+# API keys/projects specifically (live-observed: "gemini-2.5-flash" and
+# "gemini-2.5-flash-lite" both 404 "no longer available to new users" for a
+# freshly created key, while older keys keep working -- the model is still
+# listed by the API, just gated per-project). "-latest" is a self-updating
+# alias Google maintains to always point at their current recommended flash
+# model, so it isn't tied to any one dated snapshot's eventual retirement.
+_GEMINI_DEFAULT_MODEL = "gemini-flash-latest"
+
 
 class ConfigError(RuntimeError):
     pass
@@ -89,7 +98,7 @@ def resolve_provider(engine: str, model: str | None = None):
         if _groq_key():
             return GroqProvider(_groq_key(), model or "llama-3.3-70b-versatile")
         if _gemini_key():
-            return GeminiProvider(_gemini_key(), model or "gemini-2.5-flash")
+            return GeminiProvider(_gemini_key(), model or _GEMINI_DEFAULT_MODEL)
         return None  # no keys -> heuristic fallback
 
     if engine == "groq":
@@ -108,7 +117,7 @@ def resolve_provider(engine: str, model: str | None = None):
                 "GEMINI_API_KEY not set. Get a free key at "
                 "https://aistudio.google.com/apikey and put it in a .env file."
             )
-        return GeminiProvider(key, model or "gemini-2.5-flash")
+        return GeminiProvider(key, model or _GEMINI_DEFAULT_MODEL)
 
     raise ConfigError(f"Unknown engine: {engine!r} (use auto|groq|gemini|mock|heuristic)")
 
@@ -134,7 +143,7 @@ def resolve_provider_chain(engine: str, model: str | None = None) -> list:
         if _groq_key():
             chain.append(GroqProvider(_groq_key(), model or "llama-3.3-70b-versatile"))
         if _gemini_key():
-            chain.append(GeminiProvider(_gemini_key(), model or "gemini-2.5-flash"))
+            chain.append(GeminiProvider(_gemini_key(), model or _GEMINI_DEFAULT_MODEL))
         return chain
     single = resolve_provider(engine, model)
     return [] if single is None else [single]
