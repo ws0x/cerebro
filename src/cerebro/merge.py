@@ -32,6 +32,14 @@ from .ir import MindMap, Node, NodeType, Relationship
 
 _MARKER_TO_TYPE = {marker: node_type for node_type, marker in _MARKER.items()}
 
+# A real content.json, even for an enormous map, is plain JSON text and
+# nowhere near this size -- a crafted .xmind with a maliciously oversized
+# entry would otherwise decompress fully into memory with no limit, since
+# zipfile.ZipFile.read() decompresses unconditionally. The zip's own central
+# directory records file_size without needing to decompress anything, so
+# this check is free.
+_MAX_CONTENT_JSON_BYTES = 50_000_000
+
 
 class MergeError(Exception):
     pass
@@ -90,12 +98,22 @@ def _node_from_xmind_topic(topic: dict, is_root: bool = False) -> Node:
 def read_xmind(path: Path) -> MindMap:
     try:
         with zipfile.ZipFile(path) as z:
-            data = json.loads(z.read("content.json"))
+            info = z.getinfo("content.json")
+            if info.file_size > _MAX_CONTENT_JSON_BYTES:
+                raise MergeError(
+                    f"{path}'s content.json is implausibly large "
+                    f"({info.file_size:,} bytes) -- refusing to decompress it."
+                )
+            data = json.loads(z.read(info))
+    except MergeError:
+        raise
     except Exception as exc:
         raise MergeError(f"Not a valid XMind file: {path} ({exc})") from exc
-    if not data:
+    if not isinstance(data, list) or not data:
         raise MergeError(f"XMind file has no sheets: {path}")
     sheet = data[0]
+    if not isinstance(sheet, dict):
+        raise MergeError(f"XMind file's first sheet is malformed: {path}")
     root_topic = sheet.get("rootTopic")
     if not root_topic:
         raise MergeError(f"XMind file has no root topic: {path}")

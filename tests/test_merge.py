@@ -118,6 +118,54 @@ def test_read_xmind_rejects_a_non_zip_file(tmp_path):
         read_xmind(bad)
 
 
+def test_read_xmind_rejects_an_implausibly_large_content_json(tmp_path, monkeypatch):
+    # A crafted .xmind whose content.json entry declares a huge uncompressed
+    # size -- the zip's own central directory records this without any
+    # decompression needed, so this must be rejected before z.read() is ever
+    # called on the entry.
+    bad = tmp_path / "bomb.xmind"
+    with zipfile.ZipFile(bad, "w", zipfile.ZIP_DEFLATED) as z:
+        # A real oversized entry (rather than a hand-forged header) so this
+        # exercises the actual file_size the zip format records.
+        z.writestr("content.json", "[" + ("0" * 200) + "]")
+
+    monkeypatch.setattr("cerebro.merge._MAX_CONTENT_JSON_BYTES", 50)  # lower the bar so the 200+ byte entry trips it
+    with pytest.raises(MergeError, match="implausibly large"):
+        read_xmind(bad)
+
+
+def test_read_xmind_rejects_content_json_that_is_a_bare_object(tmp_path):
+    bad = tmp_path / "wrong_shape.xmind"
+    with zipfile.ZipFile(bad, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("content.json", json.dumps({"not": "a list of sheets"}))
+    with pytest.raises(MergeError):
+        read_xmind(bad)
+
+
+def test_read_xmind_rejects_content_json_that_is_a_bare_string(tmp_path):
+    bad = tmp_path / "wrong_shape2.xmind"
+    with zipfile.ZipFile(bad, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("content.json", json.dumps("just a string"))
+    with pytest.raises(MergeError):
+        read_xmind(bad)
+
+
+def test_read_xmind_rejects_a_sheet_that_is_not_an_object(tmp_path):
+    bad = tmp_path / "wrong_sheet.xmind"
+    with zipfile.ZipFile(bad, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("content.json", json.dumps(["not a sheet object"]))
+    with pytest.raises(MergeError):
+        read_xmind(bad)
+
+
+def test_read_xmind_rejects_an_empty_list(tmp_path):
+    bad = tmp_path / "empty_list.xmind"
+    with zipfile.ZipFile(bad, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("content.json", json.dumps([]))
+    with pytest.raises(MergeError):
+        read_xmind(bad)
+
+
 def test_merge_maps_requires_at_least_two(tmp_path):
     mm = _sample_mindmap()
     path = write_opml(mm, tmp_path / "a.opml")
