@@ -1,5 +1,7 @@
+import requests
+
 from cerebro.cache import Cache
-from cerebro.ingest.youtube import _fetch_segments, _raw_to_segments, extract_video_id
+from cerebro.ingest.youtube import _fetch_segments, _fetch_title, _raw_to_segments, extract_video_id, load_youtube
 
 # clean_caption_text() itself (the noise-tag regex) is unit-tested in
 # test_captions.py, shared with subtitles.py; the tests here only cover
@@ -107,3 +109,76 @@ def test_disabled_cache_always_fetches_fresh(tmp_path, monkeypatch):
     _fetch_segments("abc123", ["en"], cache=cache)
     _fetch_segments("abc123", ["en"], cache=cache)
     assert len(calls) == 2
+
+
+class _FakeResponse:
+    def __init__(self, ok=True, status_code=200, json_body=None, json_raises=False):
+        self.ok = ok
+        self.status_code = status_code
+        self._json_body = json_body or {}
+        self._json_raises = json_raises
+
+    def json(self):
+        if self._json_raises:
+            raise ValueError("not valid JSON")
+        return self._json_body
+
+
+def test_fetch_title_success_has_no_warning(monkeypatch):
+    monkeypatch.setattr(requests, "get", lambda *a, **k: _FakeResponse(json_body={"title": "Real Title"}))
+    title, warning = _fetch_title("abc123")
+    assert title == "Real Title"
+    assert warning is None
+
+
+def test_fetch_title_network_error_falls_back_to_video_id_and_warns(monkeypatch):
+    def raise_it(*a, **k):
+        raise requests.ConnectionError("no route to host")
+
+    monkeypatch.setattr(requests, "get", raise_it)
+    title, warning = _fetch_title("abc123")
+    assert title == "abc123"
+    assert warning is not None
+    assert "abc123" in warning
+
+
+def test_fetch_title_non_ok_response_falls_back_to_video_id_and_warns(monkeypatch):
+    monkeypatch.setattr(requests, "get", lambda *a, **k: _FakeResponse(ok=False, status_code=404))
+    title, warning = _fetch_title("abc123")
+    assert title == "abc123"
+    assert warning is not None
+    assert "404" in warning
+
+
+def test_fetch_title_unparseable_json_falls_back_to_video_id_and_warns(monkeypatch):
+    monkeypatch.setattr(requests, "get", lambda *a, **k: _FakeResponse(json_raises=True))
+    title, warning = _fetch_title("abc123")
+    assert title == "abc123"
+    assert warning is not None
+
+
+def test_load_youtube_surfaces_a_title_fetch_failure_as_a_transcript_warning(monkeypatch):
+    monkeypatch.setattr(
+        "cerebro.ingest.youtube._fetch_segments_raw",
+        lambda video_id, languages: [{"text": "hello", "start": 0.0, "duration": 1.0}],
+    )
+    monkeypatch.setattr(requests, "get", lambda *a, **k: _FakeResponse(ok=False, status_code=500))
+
+    transcript = load_youtube("https://youtu.be/dQw4w9WgXcQ")
+
+    assert transcript.title == "dQw4w9WgXcQ"  # fell back to the video id
+    assert len(transcript.warnings) == 1
+    assert "500" in transcript.warnings[0]
+
+
+def test_load_youtube_has_no_warnings_on_a_clean_run(monkeypatch):
+    monkeypatch.setattr(
+        "cerebro.ingest.youtube._fetch_segments_raw",
+        lambda video_id, languages: [{"text": "hello", "start": 0.0, "duration": 1.0}],
+    )
+    monkeypatch.setattr(requests, "get", lambda *a, **k: _FakeResponse(json_body={"title": "Real Title"}))
+
+    transcript = load_youtube("https://youtu.be/dQw4w9WgXcQ")
+
+    assert transcript.title == "Real Title"
+    assert transcript.warnings == []

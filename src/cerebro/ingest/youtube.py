@@ -41,18 +41,31 @@ def extract_video_id(url: str) -> str:
     raise ValueError(f"Could not extract a YouTube video id from: {url!r}")
 
 
-def _fetch_title(video_id: str) -> str:
+def _fetch_title(video_id: str) -> tuple[str, str | None]:
+    """Returns (title, warning_or_None). Falls back to the bare video id on
+    any failure -- a network error, a non-2xx response, or an unparseable
+    body -- previously all three happened silently with no signal that the
+    "title" downstream is actually just the video id, not the real title."""
     try:
         resp = requests.get(
             "https://www.youtube.com/oembed",
             params={"url": f"https://www.youtube.com/watch?v={video_id}", "format": "json"},
             timeout=10,
         )
-        if resp.ok:
-            return resp.json().get("title", video_id)
+    except requests.RequestException as exc:
+        return video_id, f"Could not reach YouTube for {video_id}'s title ({exc}); using the video id instead."
+
+    if not resp.ok:
+        return video_id, (
+            f"YouTube's oEmbed endpoint returned HTTP {resp.status_code} for {video_id}'s title; "
+            "using the video id instead."
+        )
+
+    try:
+        title = resp.json().get("title") or video_id
     except Exception:
-        pass
-    return video_id
+        return video_id, f"Could not parse the title response for {video_id}; using the video id instead."
+    return title, None
 
 
 def _fetch_segments_raw(video_id: str, languages: list[str]) -> list[dict]:
@@ -98,5 +111,6 @@ def load_youtube(url: str, languages: list[str] | None = None, cache: "Cache | N
     languages = languages or ["en", "en-US", "en-GB"]
     video_id = extract_video_id(url)
     segments = _fetch_segments(video_id, languages, cache=cache)
-    title = _fetch_title(video_id)
-    return Transcript(source=url, title=title, segments=segments, language=languages[0])
+    title, warning = _fetch_title(video_id)
+    warnings = [warning] if warning else []
+    return Transcript(source=url, title=title, segments=segments, language=languages[0], warnings=warnings)
