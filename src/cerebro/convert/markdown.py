@@ -9,20 +9,43 @@ that, just noise. Relationships (expert level) get an honest trailing
 section instead of a synthetic linking convention: ``**A** → **B** (label)``,
 readable on its own and still simple enough to reformat by hand if a reader
 does want to wire it into their own vault's linking style.
+
+A bullet's semantic type (concept/definition/example/insight/action/warning/
+question -- the same distinction XMind renders as a marker icon) gets a
+plain ``[Tag]`` prefix instead of silently disappearing; root/topic/detail
+are structural defaults and stay untagged.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from ..ir import MindMap, Node
+from ..ir import MindMap, Node, NodeType
 from .util import atomic_write, note_for
 
 _INDENT = "  "
 
+# Only the semantic types worth flagging get a tag -- root/topic/detail are
+# structural defaults (detail in particular is what the heuristic structurer
+# and foldermap assign to ordinary, nothing-special leaves), so tagging them
+# would just add noise to every plain bullet. This otherwise mirrors what
+# XMind/OPML already preserve via node.type, which Markdown export was
+# silently dropping entirely.
+_TYPE_TAG = {
+    NodeType.concept: "Concept",
+    NodeType.definition: "Definition",
+    NodeType.example: "Example",
+    NodeType.insight: "Insight",
+    NodeType.action: "Action",
+    NodeType.warning: "Warning",
+    NodeType.question: "Question",
+}
+
 
 def _bullets(node: Node, depth: int) -> list[str]:
-    lines = [f"{_INDENT * depth}- {node.title}"]
+    tag = _TYPE_TAG.get(node.type)
+    prefix = f"[{tag}] " if tag else ""
+    lines = [f"{_INDENT * depth}- {prefix}{node.title}"]
     note = note_for(node)
     if note:
         note_oneline = " ".join(note.split())  # collapse embedded newlines -- a note is one bullet, not a nested block

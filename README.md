@@ -499,7 +499,7 @@ few seconds under free-tier limits reads as waiting on purpose, not stuck.
 |---|---|---|---|
 | Hierarchy & content | ✅ full fidelity | ✅ full fidelity | ✅ full fidelity |
 | Notes & timestamps | ✅ | ✅ | ✅ |
-| Markers / icons (🔑 💡 ⚠️ ✅ ✨) | ❌ | ✅ | ❌ |
+| Markers / icons (🔑 💡 ⚠️ ✅ ✨) | ❌ | ✅ | ✅ *(as a plain `[Tag]` prefix, not an icon)* |
 | Relationship arrows (`expert` level) | ❌ | ✅ | ✅ *(as a plain "Relationships" section, not inline arrows)* |
 | Opens in | XMind, Freemind, MindNode, Workflowy, most outliners | XMind only (native) | Obsidian, Notion, any plain-text/markdown editor |
 | Import step | `File → Import → OPML` | Just double-click | Just open the file |

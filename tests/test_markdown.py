@@ -96,3 +96,46 @@ def test_write_markdown_creates_parent_dirs_and_writes_utf8(tmp_path):
     out = write_markdown(mm, tmp_path / "nested" / "dir" / "map.md")
     assert out.exists()
     assert "Café ☕ topic" in out.read_text(encoding="utf-8")
+
+
+def test_semantic_node_types_get_a_tag_prefix():
+    root = Node(title="Root", type=NodeType.root)
+    root.add("A definition", type=NodeType.definition)
+    root.add("A warning", type=NodeType.warning)
+    root.add("A concept", type=NodeType.concept)
+    root.add("An example", type=NodeType.example)
+    root.add("An insight", type=NodeType.insight)
+    root.add("An action", type=NodeType.action)
+    root.add("A question", type=NodeType.question)
+    mm = MindMap(title="Root", root=root)
+    text = mindmap_to_markdown(mm)
+
+    assert "- [Definition] A definition" in text
+    assert "- [Warning] A warning" in text
+    assert "- [Concept] A concept" in text
+    assert "- [Example] An example" in text
+    assert "- [Insight] An insight" in text
+    assert "- [Action] An action" in text
+    assert "- [Question] A question" in text
+
+
+def test_structural_node_types_are_not_tagged():
+    root = Node(title="Root", type=NodeType.root)
+    root.add("Plain topic", type=NodeType.topic)
+    root.add("Plain detail", type=NodeType.detail)
+    mm = MindMap(title="Root", root=root)
+    text = mindmap_to_markdown(mm)
+
+    assert "- Plain topic" in text
+    assert "- Plain detail" in text
+    assert "[" not in text.split("# Root", 1)[1]
+
+
+def test_type_tag_survives_alongside_a_note():
+    root = Node(title="Root", type=NodeType.root)
+    root.add("Tricky part", type=NodeType.warning, note="Watch out for this.")
+    mm = MindMap(title="Root", root=root)
+    text = mindmap_to_markdown(mm)
+    lines = text.splitlines()
+    idx = lines.index("- [Warning] Tricky part")
+    assert lines[idx + 1] == "  *Watch out for this.*"
