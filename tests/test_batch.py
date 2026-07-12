@@ -1,7 +1,16 @@
+from pathlib import Path
+
 import fitz
 
 import cerebro.batch as batch_module
-from cerebro.batch import BatchItem, dry_run_batch, forget_batch_snapshot, list_batch_snapshots, run_batch
+from cerebro.batch import (
+    BatchItem,
+    _local_file_fingerprint,
+    dry_run_batch,
+    forget_batch_snapshot,
+    list_batch_snapshots,
+    run_batch,
+)
 from cerebro.cache import Cache
 from cerebro.ir import NodeType
 from cerebro.structure import HeuristicStructurer
@@ -399,3 +408,72 @@ def test_dry_run_with_no_batch_source_reports_everything_new(tmp_path, tmp_path_
     reused, new = dry_run_batch(items, "full", None, snapshot_dir=snap_dir)
     assert reused == []
     assert new == ["A"]
+
+
+def test_local_file_fingerprint_none_for_a_url_or_missing_file(tmp_path):
+    assert _local_file_fingerprint("https://www.youtube.com/watch?v=abc123") is None
+    assert _local_file_fingerprint(str(tmp_path / "does-not-exist.txt")) is None
+
+
+def test_local_file_fingerprint_reflects_size_and_mtime(tmp_path):
+    f = tmp_path / "lesson.txt"
+    f.write_text("original", encoding="utf-8")
+    fp1 = _local_file_fingerprint(str(f))
+    assert fp1 is not None
+
+    f.write_text("a much longer replacement body", encoding="utf-8")
+    fp2 = _local_file_fingerprint(str(f))
+    assert fp2 != fp1
+
+
+def test_edited_local_file_is_reprocessed_not_silently_reused(tmp_path, tmp_path_factory):
+    items = _lesson_files(tmp_path, [("A", "Topic A content here.")])
+    snap_dir = tmp_path_factory.mktemp("snap")
+
+    run_batch(
+        items, lambda: HeuristicStructurer(), level="full", title="Course",
+        batch_source="course://demo", snapshot_dir=snap_dir,
+    )
+
+    # Same path, genuinely different (and differently-sized) content -- the
+    # "lesson file re-recorded/edited in place" scenario a URL-only
+    # source-string reuse check would silently miss.
+    Path(items[0].source).write_text(
+        "A completely rewritten lesson, much longer than the original body.", encoding="utf-8"
+    )
+
+    combined2, outcomes2, diff2 = run_batch(
+        items, lambda: HeuristicStructurer(), level="full", title="Course",
+        batch_source="course://demo", snapshot_dir=snap_dir,
+    )
+    assert diff2.added == ["A"]
+    assert not diff2.reused
+
+
+def test_dry_run_reports_an_edited_local_file_as_new_not_reused(tmp_path, tmp_path_factory):
+    items = _lesson_files(tmp_path, [("A", "Topic A content here.")])
+    snap_dir = tmp_path_factory.mktemp("snap")
+    run_batch(items, lambda: HeuristicStructurer(), level="full", title="Course",
+              batch_source="course://demo", snapshot_dir=snap_dir)
+
+    Path(items[0].source).write_text(
+        "A completely rewritten lesson, much longer than the original body.", encoding="utf-8"
+    )
+
+    reused, new = dry_run_batch(items, "full", "course://demo", snapshot_dir=snap_dir)
+    assert reused == []
+    assert new == ["A"]
+
+
+def test_unchanged_local_file_is_still_reused_across_reruns(tmp_path, tmp_path_factory):
+    # Guards against the fingerprint check itself becoming over-eager and
+    # invalidating reuse for files that genuinely didn't change.
+    items = _lesson_files(tmp_path, [("A", "Topic A content here.")])
+    snap_dir = tmp_path_factory.mktemp("snap")
+    run_batch(items, lambda: HeuristicStructurer(), level="full", title="Course",
+              batch_source="course://demo", snapshot_dir=snap_dir)
+
+    _, _, diff2 = run_batch(items, lambda: HeuristicStructurer(), level="full", title="Course",
+                             batch_source="course://demo", snapshot_dir=snap_dir)
+    assert diff2.reused == ["A"]
+    assert not diff2.added

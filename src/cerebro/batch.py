@@ -79,9 +79,40 @@ def dry_run_batch(
         snapshot = _load_batch_snapshot(batch_source, {"level": level}, snapshot_dir)
         if snapshot is not None:
             old_items = snapshot["items"]
-    reused = [item.label for item in items if item.source in old_items]
-    new = [item.label for item in items if item.source not in old_items]
+
+    def _would_reuse(item: BatchItem) -> bool:
+        old = old_items.get(item.source)
+        if old is None:
+            return False
+        old_fingerprint = old.get("fingerprint")
+        return old_fingerprint is None or old_fingerprint == _local_file_fingerprint(item.source)
+
+    reused = [item.label for item in items if _would_reuse(item)]
+    new = [item.label for item in items if not _would_reuse(item)]
     return reused, new
+
+
+def _local_file_fingerprint(source: str) -> dict[str, float] | None:
+    """A cheap (size, mtime) signature for a batch item that's a local file
+    -- e.g. a course-folder video/subtitle/PDF -- so an in-place edit (same
+    path, different content) is detected on rerun instead of silently
+    reusing stale structured content. Mirrors foldermap.py's own stat-based
+    signature, which solved the identical problem for folder trees.
+
+    Returns None for anything that isn't an existing local file (a YouTube
+    URL, most obviously) -- there's no cheap way to fingerprint those
+    without doing the exact network fetch incremental reuse exists to
+    avoid, and YouTube captions essentially never change post-publish
+    anyway (the same reasoning already used to justify caching them).
+    """
+    path = Path(source)
+    try:
+        if not path.is_file():
+            return None
+        stat = path.stat()
+    except OSError:
+        return None
+    return {"size": stat.st_size, "mtime": stat.st_mtime}
 
 
 def _batch_snapshot_path(batch_source: str, snapshot_dir: Path) -> Path:
@@ -191,11 +222,18 @@ def run_batch(
         t0 = time.perf_counter()
         old = old_items.get(item.source)
         if old is not None:
-            reused_labels.append(item.label)
-            branch = Node.model_validate(old["branch"])
-            rels = [Relationship.model_validate(r) for r in old.get("relationships", [])]
-            mm = MindMap(title=old["label"], root=branch, relationships=rels, level=level)
-            return BatchOutcome(item.label, mm, None, time.perf_counter() - t0)
+            old_fingerprint = old.get("fingerprint")
+            # A fingerprint only invalidates reuse when the *previous* run
+            # actually recorded one (i.e. this source was a local file last
+            # time too) -- URL-sourced items never carry one and keep the
+            # existing pure string-match reuse untouched.
+            stale = old_fingerprint is not None and old_fingerprint != _local_file_fingerprint(item.source)
+            if not stale:
+                reused_labels.append(item.label)
+                branch = Node.model_validate(old["branch"])
+                rels = [Relationship.model_validate(r) for r in old.get("relationships", [])]
+                mm = MindMap(title=old["label"], root=branch, relationships=rels, level=level)
+                return BatchOutcome(item.label, mm, None, time.perf_counter() - t0)
 
         added_labels.append(item.label)
         try:
@@ -226,6 +264,7 @@ def run_batch(
                     "label": outcome.label,
                     "branch": branch.model_dump(mode="json"),
                     "relationships": [r.model_dump(mode="json") for r in outcome.mindmap.relationships],
+                    "fingerprint": _local_file_fingerprint(item.source),
                 }
                 # Checkpoint after every item, not just once at the very
                 # end -- a killed/crashed run (Ctrl+C, network drop, power
