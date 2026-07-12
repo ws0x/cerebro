@@ -1,6 +1,9 @@
 import json
 import time
 
+import pytest
+
+import cerebro.foldermap as foldermap_module
 from cerebro.cache import Cache
 from cerebro.foldermap import (
     build_folder_map,
@@ -220,6 +223,27 @@ def test_different_params_do_not_reuse_an_incompatible_snapshot(tmp_path, tmp_pa
     mm2, diff2, nodes2 = _map_reusing_snapshot(project, snap_dir, max_files=50)
     assert diff2 is None
     assert len(nodes2) > 0
+
+
+def test_snapshot_write_failure_does_not_corrupt_the_previous_snapshot(tmp_path, tmp_path_factory, monkeypatch):
+    project = _make_project(tmp_path)
+    snap_dir = tmp_path_factory.mktemp("snap")
+
+    _map_reusing_snapshot(project, snap_dir)
+    snapshot_path = foldermap_module._snapshot_path(project, snap_dir)
+    original_content = snapshot_path.read_text(encoding="utf-8")
+
+    def boom(path, write_fn):
+        raise RuntimeError("simulated crash mid-write")
+
+    monkeypatch.setattr("cerebro.foldermap.atomic_write", boom)
+
+    with pytest.raises(RuntimeError, match="simulated crash"):
+        _map_reusing_snapshot(project, snap_dir, incremental=False)
+
+    # The previous good snapshot survives untouched -- proves the save
+    # actually routes through atomic_write, not a plain write_text.
+    assert snapshot_path.read_text(encoding="utf-8") == original_content
 
 
 def test_root_folder_is_never_sent_for_ai_labeling(tmp_path, tmp_path_factory):

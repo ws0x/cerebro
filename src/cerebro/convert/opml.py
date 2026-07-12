@@ -15,7 +15,8 @@ from pathlib import Path
 from xml.dom import minidom
 
 from ..ir import MindMap, Node
-from .util import atomic_write, note_for
+from ..fsutil import atomic_write
+from .util import note_for
 
 
 def _build_outline(parent_el: ET.Element, node: Node) -> None:

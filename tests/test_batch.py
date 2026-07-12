@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import fitz
+import pytest
 
 import cerebro.batch as batch_module
 from cerebro.batch import (
@@ -96,6 +97,33 @@ def test_batch_checkpoints_the_snapshot_after_every_item_not_just_at_the_end(tmp
     assert len(snapshot_calls[1]) == 2  # after item 2: items 1+2 saved so far
     assert len(snapshot_calls[2]) == 3  # after item 3: all three saved
     assert len(snapshot_calls[3]) == 3  # final save: unchanged, all three
+
+
+def test_batch_snapshot_write_failure_does_not_corrupt_the_previous_snapshot(tmp_path, tmp_path_factory, monkeypatch):
+    items = _lesson_files(tmp_path, [("A", "Topic A content here.")])
+    snap_dir = tmp_path_factory.mktemp("snap")
+
+    run_batch(
+        items, lambda: HeuristicStructurer(), level="full", title="Course",
+        batch_source="course://demo", snapshot_dir=snap_dir,
+    )
+    snapshot_path = batch_module._batch_snapshot_path("course://demo", snap_dir)
+    original_content = snapshot_path.read_text(encoding="utf-8")
+
+    def boom(path, write_fn):
+        raise RuntimeError("simulated crash mid-write")
+
+    monkeypatch.setattr("cerebro.batch.atomic_write", boom)
+
+    with pytest.raises(RuntimeError, match="simulated crash"):
+        run_batch(
+            items, lambda: HeuristicStructurer(), level="full", title="Course",
+            batch_source="course://demo", snapshot_dir=snap_dir,
+        )
+
+    # The previous good snapshot survives untouched -- proves the snapshot
+    # save actually routes through atomic_write, not a plain write_text.
+    assert snapshot_path.read_text(encoding="utf-8") == original_content
 
 
 def test_batch_interrupted_mid_run_still_leaves_completed_items_checkpointed(tmp_path):

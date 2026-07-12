@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Callable
 
 from .cache import Cache
+from .fsutil import atomic_write
 from .ir import MindMap, Node, NodeType
 from .llm.base import LLMError, LLMProvider
 from .paths import TREE_SNAPSHOT_DIR
@@ -224,7 +225,8 @@ def _save_snapshot(
         "labels": labels,
         "source": str(root),  # for `cerebro status` to list *what* is remembered, not just a hash
     }
-    _snapshot_path(root, snapshot_dir).write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    path = _snapshot_path(root, snapshot_dir)
+    atomic_write(path, lambda tmp: tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8"))
 
 
 def _build_node(

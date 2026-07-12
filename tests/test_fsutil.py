@@ -1,6 +1,6 @@
-"""Tests for convert/util.py's shared helpers, especially atomic_write --
-the fix for all three output writers previously writing straight onto the
-destination path with no crash safety."""
+"""Tests for fsutil.atomic_write -- the fix for every file writer (the three
+output converters, plus batch/foldermap snapshot writes) that previously
+wrote straight onto the destination path with no crash safety."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from cerebro.convert.util import atomic_write
+from cerebro.fsutil import atomic_write
 
 
 def test_atomic_write_creates_file_with_content(tmp_path):

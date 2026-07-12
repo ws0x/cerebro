@@ -30,7 +30,8 @@ from pathlib import Path
 
 from .. import __version__
 from ..ir import MindMap, Node, NodeType
-from .util import atomic_write, note_for
+from ..fsutil import atomic_write
+from .util import note_for
 
 # NodeType -> XMind built-in marker id (icons shipped with XMind).
 _MARKER = {

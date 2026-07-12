@@ -21,7 +21,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..ir import MindMap, Node, NodeType
-from .util import atomic_write, note_for
+from ..fsutil import atomic_write
+from .util import note_for
 
 _INDENT = "  "
 

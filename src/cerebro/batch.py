@@ -28,6 +28,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
+from .fsutil import atomic_write
 from .ingest import load_transcript
 from .ir import MindMap, Node, NodeType, Relationship
 from .paths import BATCH_SNAPSHOT_DIR
@@ -159,9 +160,8 @@ def _save_batch_snapshot(batch_source: str, params: dict, items_data: dict, snap
         "items": items_data,
         "source": batch_source,  # for `cerebro status` to list *what* is remembered, not just a hash
     }
-    _batch_snapshot_path(batch_source, snapshot_dir).write_text(
-        json.dumps(data, ensure_ascii=False), encoding="utf-8"
-    )
+    path = _batch_snapshot_path(batch_source, snapshot_dir)
+    atomic_write(path, lambda tmp: tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8"))
 
 
 def list_batch_snapshots(snapshot_dir: str | Path | None = None) -> list[dict]:
