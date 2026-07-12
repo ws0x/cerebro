@@ -68,7 +68,7 @@ from .search import search_maps
 from .structure import HeuristicStructurer
 from .structure.document import OutlineAwareStructurer, build_outline_map, build_outline_skeleton
 from .structure.llm import LLMStructurer, link_relationships
-from .structure.segment import chunk_transcript
+from .structure.segment import adaptive_max_words, chunk_transcript
 from .ui import banner, print_banner, print_preview
 from .wizard import QSTYLE, run_wizard
 
@@ -170,11 +170,15 @@ def _estimate_llm_calls(transcript, level: str) -> int:
     itself free, deterministic, offline); a word-count approximation for
     outline/enumerated sources, which chunk differently. Undercounting is
     fine here -- this is a heads-up, not a hard budget."""
-    max_words = _MAX_WORDS.get(level, _MAX_WORDS["full"])
+    base_max_words = _MAX_WORDS.get(level, _MAX_WORDS["full"])
     if not transcript.outline:
+        # Mirror the flat path's adaptive budget so the estimate reflects the
+        # calls that will ACTUALLY be made (bounded ~25 for long sources), not
+        # the linear-with-length count the base budget would imply.
+        max_words = adaptive_max_words(transcript.word_count, base_max_words)
         num_chunks = len(chunk_transcript(transcript, max_words))
     else:
-        num_chunks = max(1, -(-transcript.word_count // max_words))  # ceiling division
+        num_chunks = max(1, -(-transcript.word_count // base_max_words))  # ceiling division
     overhead = 2 if level == "expert" else 1  # +reduce/section-fill, +link at expert
     return num_chunks + overhead
 

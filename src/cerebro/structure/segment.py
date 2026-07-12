@@ -14,6 +14,7 @@ like from outside. Fully offline, no network, no model download.
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass
 
@@ -86,6 +87,36 @@ def _boundary_threshold(scores: dict[int, float]) -> float:
 class Chunk:
     text: str
     start: float
+
+
+# Target number of MAP calls per source. For dense content the chunker cuts
+# at roughly `min_fraction * max_words` (the first topic boundary past that
+# threshold), so a 2-hour podcast at the base 1200-word budget becomes ~61
+# tiny chunks -> 61 API calls -> free-tier quota exhaustion and 429 storms.
+# adaptive_max_words() grows the budget for long sources so the call count
+# stays near this target instead of scaling linearly with length. A short
+# source never has its budget lowered, so its fine granularity is unchanged.
+_TARGET_MAP_CALLS = 25
+
+
+def adaptive_max_words(
+    total_words: int,
+    base_max_words: int,
+    min_fraction: float = 0.4,
+    target_calls: int = _TARGET_MAP_CALLS,
+) -> int:
+    """Per-chunk word budget that keeps the MAP call count near ``target_calls``
+    for long sources, without ever going below ``base_max_words``.
+
+    Since a dense transcript cuts at ~``min_fraction * max_words`` words per
+    chunk, aiming for ``total_words / target_calls`` words per chunk means
+    ``max_words = (total_words / target_calls) / min_fraction``. Only ever
+    raises the budget: short/normal sources keep ``base_max_words`` exactly
+    and are completely unaffected."""
+    if total_words <= 0 or target_calls <= 0 or min_fraction <= 0:
+        return base_max_words
+    needed = math.ceil(total_words / target_calls / min_fraction)
+    return max(base_max_words, needed)
 
 
 def chunk_transcript(transcript: Transcript, max_words: int, min_fraction: float = 0.4) -> list[Chunk]:

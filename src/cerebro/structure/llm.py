@@ -33,7 +33,7 @@ from ..prompts import (
 from ..transcript import Transcript
 from .anchors import verify_and_repair_anchors
 from .enumeration import EnumeratedSection, detect_enumeration
-from .segment import Chunk, chunk_transcript
+from .segment import Chunk, adaptive_max_words, chunk_transcript
 from .synthesis import add_synthesis
 
 _INTRO_MIN_WORDS = 40  # a pre-#1 intro shorter than this isn't worth an Overview branch
@@ -453,7 +453,11 @@ class LLMStructurer:
             self.on_event("enumeration_detected", sections=len(sections))
             return self._structure_enumerated(transcript, sections, level)
 
-        chunks = chunk_transcript(transcript, _MAX_WORDS[level])
+        # Grow the per-chunk budget for long sources so the MAP call count
+        # stays bounded (~25) instead of scaling with length -- otherwise a
+        # 2-hour video is 61 calls and blows the free-tier daily quota.
+        max_words = adaptive_max_words(transcript.word_count, _MAX_WORDS[level])
+        chunks = chunk_transcript(transcript, max_words)
         if not chunks:
             raise LLMError("Transcript is empty; nothing to map.")
         map_results = self._map(chunks, level)

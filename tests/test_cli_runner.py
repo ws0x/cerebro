@@ -206,12 +206,16 @@ def test_map_done_panel_shows_heuristic_engine_too(tmp_path, monkeypatch):
 
 def test_map_warns_before_spending_calls_on_a_long_source(tmp_path, monkeypatch):
     monkeypatch.setattr("cerebro.manifest.MAP_MANIFEST_PATH", tmp_path / "map-manifest.json")
-    # ~30,000 words -- past the many-calls threshold at expert level, same
-    # scale as the real 131-minute video that triggered this feature.
-    lines = [
-        f"{i}\n00:{i:02d}:00,000 --> 00:{i:02d}:05,000\n" + " ".join(f"word{j}" for j in range(50)) + "\n"
-        for i in range(600)
-    ]
+    # ~30,000 words of topically-VARIED content (rotating vocabulary) -- the
+    # shape of a real long podcast. Adaptive chunking caps uniform content at
+    # ~10 calls, so the warning only fires for varied long sources that climb
+    # toward the ~25 target; this reflects that.
+    lines = []
+    for i in range(600):
+        h, m = divmod(i, 60)
+        topic = i // 4
+        body = " ".join(f"topic{topic}word{j}" for j in range(50))
+        lines.append(f"{i + 1}\n{h:02d}:{m:02d}:00,000 --> {h:02d}:{m:02d}:05,000\n{body}\n")
     source = tmp_path / "long_lesson.srt"
     source.write_text("\n".join(lines), encoding="utf-8")
     out = tmp_path / "long_lesson.opml"
