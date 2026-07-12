@@ -719,6 +719,14 @@ Pass `--fresh` to ignore any previous map and rebuild everything from
 scratch (a new snapshot is still saved afterward, so the *next* run can go
 back to being incremental).
 
+**Snapshot history is local-only and not backed up.** `~/.cerebro/tree-snapshots/`
+lives outside git and outside your generated maps — deleting it (by hand, by
+a wipe of `~/.cerebro`, or by any tool operating on that folder) only loses
+the incremental-rebuild bookkeeping, never any `.opml`/`.xmind` file you've
+already exported. The fix is always the same: rerun `cerebro tree` (or
+`--fresh` if a stale snapshot is somehow still present) — it does one full
+AI-relabeling pass and a fresh snapshot picks back up from there.
+
 ## Guided key setup (`cerebro setup`)
 
 ```bash
