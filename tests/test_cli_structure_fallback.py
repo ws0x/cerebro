@@ -45,6 +45,16 @@ def test_a_successful_llm_run_reports_no_fallback():
     assert mm.root.children  # a real map was built, not a placeholder
 
 
+def test_a_total_llm_failure_prints_a_loud_fallback_panel(capsys):
+    # Regression guard for the "silent scroll-away" bug found alongside this
+    # one: a single plain console line was easy to miss on a long, multi-
+    # minute build -- must now be a bordered panel, not just colored text.
+    _structure(_transcript(), "full", _AlwaysFailProvider(), cache=Cache(enabled=False))
+    out = capsys.readouterr().out
+    assert "Degraded to heuristic" in out
+    assert "MAP calls failed" in out
+
+
 def test_no_provider_at_all_reports_no_fallback():
     # provider=None means "use heuristic on purpose" (no key configured) --
     # not a fallback from a failure, so this must stay False.

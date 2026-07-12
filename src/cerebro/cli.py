@@ -126,6 +126,29 @@ def _error(message: str, fix: str | None = None, code: int = 1):
     raise typer.Exit(code=code)
 
 
+def _print_fallback_warning(exc: Exception) -> None:
+    """A total LLM failure degrades to the offline heuristic engine rather
+    than crashing the build -- but the map that comes out is dramatically
+    lower quality (raw transcript fragments, no synthesis), so this can't be
+    a single line that scrolls away under a multi-minute map preview. A
+    bordered panel survives in the scrollback and is echoed in --json too, so
+    a script consuming the result can detect the downgrade programmatically
+    instead of only a human reading colored console text."""
+    if json_mode():
+        return  # _emit_result's "engine"/"used_fallback" fields cover this under --json
+    console.print(
+        Panel(
+            f"[yellow]LLM engine failed:[/] {exc}\n\n"
+            "[dim]Falling back to the offline heuristic engine — the map below is "
+            "structurally correct but has none of the AI-driven grouping, synthesis, "
+            "or anchor recovery a working LLM run would produce.[/]",
+            title="[yellow]! Degraded to heuristic[/]",
+            border_style="yellow",
+            expand=False,
+        )
+    )
+
+
 def _emit_result(payload: dict) -> None:
     """The --json success counterpart to _error — a no-op otherwise. Uses
     plain print(), not console.print(): Rich's markup parser would try to
@@ -186,7 +209,7 @@ def _structure(transcript, level, provider, cache, relationship_limit=8, synthes
             mm = structurer.structure(transcript, level=level)
         except LLMError as exc:
             progress.stop()
-            console.print(f"[yellow]! LLM engine failed ({exc}); falling back to heuristic.[/]")
+            _print_fallback_warning(exc)
             return HeuristicStructurer().structure(transcript, level=level), True
         progress.update(task, completed=progress.tasks[0].total)
         return mm, False
@@ -241,7 +264,7 @@ def _structure_document(transcript, level, provider, cache, relationship_limit=8
             )
         except LLMError as exc:
             progress.stop()
-            console.print(f"[yellow]! LLM engine failed ({exc}); falling back to heuristic.[/]")
+            _print_fallback_warning(exc)
             return build_outline_skeleton(transcript, level=level), True
         progress.update(task, completed=progress.tasks[0].total)
         return mm, False
@@ -462,7 +485,7 @@ def _do_map(
         console.print()
 
     elapsed = time.perf_counter() - t0
-    written, rel_dropped = _export(mm, fmt, out, level, elapsed, yes=yes)
+    written, rel_dropped = _export(mm, fmt, out, level, elapsed, yes=yes, engine_label=engine_label)
     manifest_record(source, level, fmt, engine_label, written)
     _emit_result({
         "ok": True,
@@ -695,7 +718,7 @@ def _do_batch(
         console.print()
 
     elapsed = time.perf_counter() - t0
-    written, rel_dropped = _export(combined, fmt, out, level, elapsed, yes=yes)
+    written, rel_dropped = _export(combined, fmt, out, level, elapsed, yes=yes, engine_label=engine_label)
     _emit_result({
         "ok": True,
         "source": source,
@@ -860,8 +883,9 @@ def _do_tree(
         print_preview(mm, max_depth=6)
         console.print()
 
+    tree_engine_label = "heuristic" if provider is None else f"{provider.name}:{provider.model}"
     elapsed = time.perf_counter() - t0
-    written, _rel_dropped = _export(mm, fmt, out, "structure", elapsed, yes=yes)
+    written, _rel_dropped = _export(mm, fmt, out, "structure", elapsed, yes=yes, engine_label=tree_engine_label)
     _emit_result({
         "ok": True,
         "path": path,
@@ -1454,10 +1478,19 @@ def forget_batch(
         console.print(f"[dim]No saved history for {source} — nothing to forget.[/]")
 
 
-def _export(mm, fmt: str, out: Path | None, level: str, elapsed: float, yes: bool = False) -> tuple[Path, int]:
+def _export(
+    mm, fmt: str, out: Path | None, level: str, elapsed: float, yes: bool = False, engine_label: str | None = None
+) -> tuple[Path, int]:
     """Writes the map to disk. Returns ``(written_path, relationships_dropped)``
     so callers can fold both into a --json result payload instead of relying
-    on this function's own (suppressed, under --json) Rich output."""
+    on this function's own (suppressed, under --json) Rich output.
+
+    ``engine_label``, when given, adds an Engine row to the Done panel --
+    previously the summary showed Output/Format/Level/Time but never which
+    engine actually built the map, so a silent LLM-to-heuristic fallback (see
+    _print_fallback_warning) had no LASTING trace once the terminal scrolled
+    past that one warning, especially on a long, multi-minute build.
+    """
     if fmt not in ("opml", "xmind", "md"):
         _error(f"Unknown format: {fmt}", fix="Use opml, xmind, or md.")
 
@@ -1531,6 +1564,10 @@ def _export(mm, fmt: str, out: Path | None, level: str, elapsed: float, yes: boo
         summary.add_row("[dim]Output[/]", f"[bold]{written}[/]")
         summary.add_row("[dim]Format[/]", fmt.upper())
         summary.add_row("[dim]Level[/]", level)
+        if engine_label is not None:
+            is_heuristic = engine_label.startswith("heuristic")
+            style = "yellow" if is_heuristic else "bold"
+            summary.add_row("[dim]Engine[/]", f"[{style}]{engine_label}[/]")
         summary.add_row("[dim]Time[/]", f"{elapsed:.2f}s")
         console.print(Panel(summary, title="[green]Done[/]", border_style="green", expand=False))
         if fmt == "opml":

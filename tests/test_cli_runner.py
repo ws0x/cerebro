@@ -164,3 +164,41 @@ def test_map_end_to_end_with_mock_engine_and_local_fixture(tmp_path, monkeypatch
     assert result.exit_code == 0, result.stdout
     assert out.exists()
     assert "<opml" in out.read_text(encoding="utf-8")
+
+
+def test_map_done_panel_shows_which_engine_actually_built_the_map(tmp_path, monkeypatch):
+    monkeypatch.setattr("cerebro.manifest.MAP_MANIFEST_PATH", tmp_path / "map-manifest.json")
+    source = tmp_path / "lesson.srt"
+    source.write_text(
+        "1\n00:00:00,000 --> 00:00:02,000\nPhotosynthesis converts light into chemical energy.\n",
+        encoding="utf-8",
+    )
+    out = tmp_path / "lesson.opml"
+
+    result = runner.invoke(
+        app,
+        ["map", str(source), "--engine", "mock", "--no-cache", "--out", str(out), "--no-preview"],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert "Engine" in result.stdout
+    assert "mock:mock-1" in result.stdout
+
+
+def test_map_done_panel_shows_heuristic_engine_too(tmp_path, monkeypatch):
+    monkeypatch.setattr("cerebro.manifest.MAP_MANIFEST_PATH", tmp_path / "map-manifest.json")
+    source = tmp_path / "lesson.srt"
+    source.write_text(
+        "1\n00:00:00,000 --> 00:00:02,000\nPhotosynthesis converts light into chemical energy.\n",
+        encoding="utf-8",
+    )
+    out = tmp_path / "lesson.opml"
+
+    result = runner.invoke(
+        app,
+        ["map", str(source), "--engine", "heuristic", "--out", str(out), "--no-preview"],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert "Engine" in result.stdout
+    assert "heuristic" in result.stdout
