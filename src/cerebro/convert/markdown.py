@@ -16,7 +16,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..ir import MindMap, Node
-from .util import note_for
+from .util import atomic_write, note_for
 
 _INDENT = "  "
 
@@ -57,5 +57,5 @@ def mindmap_to_markdown(mm: MindMap) -> str:
 def write_markdown(mm: MindMap, path: str | Path) -> Path:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(mindmap_to_markdown(mm), encoding="utf-8")
+    atomic_write(path, lambda tmp: tmp.write_text(mindmap_to_markdown(mm), encoding="utf-8"))
     return path

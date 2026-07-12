@@ -30,7 +30,7 @@ from pathlib import Path
 
 from .. import __version__
 from ..ir import MindMap, Node, NodeType
-from .util import note_for
+from .util import atomic_write, note_for
 
 # NodeType -> XMind built-in marker id (icons shipped with XMind).
 _MARKER = {
@@ -670,9 +670,11 @@ def write_xmind(mm: MindMap, path: str | Path) -> Path:
         {"file-entries": {"content.json": {}, "metadata.json": {}}}, ensure_ascii=False
     )
 
-    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
-        z.writestr("content.json", content)
-        z.writestr("metadata.json", metadata)
-        z.writestr("manifest.json", manifest)
+    def _write(tmp: Path) -> None:
+        with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as z:
+            z.writestr("content.json", content)
+            z.writestr("metadata.json", metadata)
+            z.writestr("manifest.json", manifest)
 
+    atomic_write(path, _write)
     return path

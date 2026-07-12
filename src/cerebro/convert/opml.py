@@ -15,7 +15,7 @@ from pathlib import Path
 from xml.dom import minidom
 
 from ..ir import MindMap, Node
-from .util import note_for
+from .util import atomic_write, note_for
 
 
 def _build_outline(parent_el: ET.Element, node: Node) -> None:
@@ -53,5 +53,5 @@ def mindmap_to_opml(mm: MindMap) -> str:
 def write_opml(mm: MindMap, path: str | Path) -> Path:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(mindmap_to_opml(mm), encoding="utf-8")
+    atomic_write(path, lambda tmp: tmp.write_text(mindmap_to_opml(mm), encoding="utf-8"))
     return path
