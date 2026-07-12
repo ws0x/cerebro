@@ -902,6 +902,12 @@ handles both:
   run never bursts into a 429 storm — it just runs a bit slower and completes
   reliably. Tune it with `CEREBRO_GROQ_MIN_INTERVAL` / `CEREBRO_GEMINI_MIN_INTERVAL`
   (seconds between requests) if your tier differs from the defaults.
+- **Provider failover.** With `--engine auto` (the default) and both
+  `GROQ_API_KEY`/`GEMINI_API_KEY` set, a TOTAL failure on one provider (its
+  daily quota exhausted, a sustained rate-limit storm) automatically tries
+  the other in full before degrading to the offline heuristic — instead of
+  giving up after the first. An explicit `--engine groq`/`--engine gemini`
+  is respected exactly as asked; it never silently swaps to the other.
 
 **"This is a long source — building at X will need ~N LLM calls"** — a
 pre-flight estimate, printed before any calls are spent, when a source is long

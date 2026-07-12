@@ -59,7 +59,7 @@ from .ingest import load_transcript
 from .ingest.folder import discover_course_sources
 from .ingest.playlist import PlaylistIngestError, is_playlist_url, load_playlist
 from .llm.base import LLMError
-from .llm.config import ConfigError, load_env, read_env_file, resolve_provider, write_env_file
+from .llm.config import ConfigError, load_env, read_env_file, resolve_provider, resolve_provider_chain, write_env_file
 from .manifest import lookup as manifest_lookup
 from .manifest import record as manifest_record
 from .merge import MergeError, merge_maps, read_map
@@ -192,124 +192,149 @@ def _emit_result(payload: dict) -> None:
         print(json.dumps(payload, ensure_ascii=False))
 
 
-def _structure(transcript, level, provider, cache, relationship_limit=8, synthesize=True, purpose="general") -> tuple:
-    """Returns (map, used_heuristic_fallback). used_heuristic_fallback is True
-    only when an LLM engine was requested but every call failed and the result
-    is actually the deterministic heuristic map -- the caller needs this to
-    correct engine_label, or a total LLM failure gets reported (and persisted
-    to the manifest / --json output) as if the requested engine had succeeded."""
+def _structure(transcript, level, provider_chain, cache, relationship_limit=8, synthesize=True, purpose="general") -> tuple:
+    """Returns (map, used_heuristic_fallback, used_provider).
+
+    ``provider_chain`` is a list, not a single provider: for --engine auto
+    this is every configured provider (Groq then Gemini), tried in full in
+    order -- a total failure on one (daily quota exhausted, a sustained
+    rate-limit storm) fails over to the next before degrading to heuristic,
+    rather than giving up after just one. An explicit --engine groq/gemini
+    resolves to a single-item chain, so it's respected exactly as asked.
+
+    ``used_provider`` is the provider that actually built the map (None for
+    heuristic) -- the caller derives engine_label from this directly instead
+    of guessing beforehand and correcting after, since failover means the
+    provider that succeeds isn't necessarily the first one in the chain."""
     if transcript.outline:
         # A source with real, pre-existing structure (currently: PDFs with a
         # TOC/detected headings) -- the hierarchy is already known, so this
         # skips reduce entirely rather than asking an LLM to reinvent it.
-        # _structure_document has its own (map, used_fallback) contract, same
-        # shape as this function, so it's returned straight through.
-        return _structure_document(transcript, level, provider, cache, relationship_limit, synthesize, purpose)
+        # _structure_document has its own (map, used_fallback, used_provider)
+        # contract, same shape as this function, so it's returned straight through.
+        return _structure_document(transcript, level, provider_chain, cache, relationship_limit, synthesize, purpose)
 
-    if provider is None:
+    if not provider_chain:
         with _spinner(f"Structuring ({level})…"):
-            return HeuristicStructurer().structure(transcript, level=level), False
+            return HeuristicStructurer().structure(transcript, level=level), False, None
 
-    with RichProgress(
-        SpinnerColumn(),
-        TextColumn("[cyan]{task.description}"),
-        BarColumn(),
-        TextColumn("{task.completed}/{task.total}"),
-        TimeElapsedColumn(),
-        console=console,
-        transient=True,
-        disable=json_mode(),
-    ) as progress:
-        task = progress.add_task("Thinking…", total=1)
+    last_exc: LLMError | None = None
+    for idx, provider in enumerate(provider_chain):
+        with RichProgress(
+            SpinnerColumn(),
+            TextColumn("[cyan]{task.description}"),
+            BarColumn(),
+            TextColumn("{task.completed}/{task.total}"),
+            TimeElapsedColumn(),
+            console=console,
+            transient=True,
+            disable=json_mode(),
+        ) as progress:
+            task = progress.add_task("Thinking…", total=1)
 
-        def on_event(kind, **d):
-            if kind == "map_start":
-                progress.update(task, description="Mapping segments", total=d["total"], completed=0)
-            elif kind == "map_resumed":
-                # Printed via progress.console (not progress.update) so it
-                # survives after the transient progress bar clears -- a
-                # retry after a partial failure should visibly say so, not
-                # look identical to a from-scratch run.
-                progress.console.print(
-                    f"[dim]  ↻ Resuming: {d['cached']}/{d['total']} segments already cached from a previous attempt.[/]"
-                )
-            elif kind == "map_progress":
-                progress.update(task, completed=d["done"])
-            elif kind == "reduce_start":
-                progress.update(task, description="Reducing into a hierarchy", total=1, completed=0)
-            elif kind == "anchor_check":
-                progress.update(task, description="Recovering dropped anchors", total=1, completed=0)
-            elif kind == "synthesis_start":
-                progress.update(task, description="Synthesizing key takeaways", total=1, completed=0)
-            elif kind == "link_start":
-                progress.update(task, description="Detecting cross-links", total=1, completed=0)
+            def on_event(kind, **d):
+                if kind == "map_start":
+                    progress.update(task, description="Mapping segments", total=d["total"], completed=0)
+                elif kind == "map_resumed":
+                    # Printed via progress.console (not progress.update) so it
+                    # survives after the transient progress bar clears -- a
+                    # retry after a partial failure should visibly say so, not
+                    # look identical to a from-scratch run.
+                    progress.console.print(
+                        f"[dim]  ↻ Resuming: {d['cached']}/{d['total']} segments already cached from a previous attempt.[/]"
+                    )
+                elif kind == "map_progress":
+                    progress.update(task, completed=d["done"])
+                elif kind == "reduce_start":
+                    progress.update(task, description="Reducing into a hierarchy", total=1, completed=0)
+                elif kind == "anchor_check":
+                    progress.update(task, description="Recovering dropped anchors", total=1, completed=0)
+                elif kind == "synthesis_start":
+                    progress.update(task, description="Synthesizing key takeaways", total=1, completed=0)
+                elif kind == "link_start":
+                    progress.update(task, description="Detecting cross-links", total=1, completed=0)
 
-        structurer = LLMStructurer(
-            provider, cache, on_event=on_event, relationship_limit=relationship_limit, synthesize=synthesize, purpose=purpose
-        )
-        try:
-            mm = structurer.structure(transcript, level=level)
-        except LLMError as exc:
-            progress.stop()
-            _print_fallback_warning(exc)
-            return HeuristicStructurer().structure(transcript, level=level), True
-        progress.update(task, completed=progress.tasks[0].total)
-        return mm, False
+            structurer = LLMStructurer(
+                provider, cache, on_event=on_event, relationship_limit=relationship_limit, synthesize=synthesize, purpose=purpose
+            )
+            try:
+                mm = structurer.structure(transcript, level=level)
+            except LLMError as exc:
+                last_exc = exc
+                progress.stop()
+                if idx < len(provider_chain) - 1:
+                    nxt = provider_chain[idx + 1]
+                    console.print(f"[yellow]![/] {provider.name} failed ({exc}); trying {nxt.name}…")
+                continue
+            progress.update(task, completed=progress.tasks[0].total)
+            return mm, False, provider
+
+    _print_fallback_warning(last_exc)
+    return HeuristicStructurer().structure(transcript, level=level), True, None
 
 
-def _structure_document(transcript, level, provider, cache, relationship_limit=8, synthesize=True, purpose="general") -> tuple:
+def _structure_document(transcript, level, provider_chain, cache, relationship_limit=8, synthesize=True, purpose="general") -> tuple:
     """Outline-bearing source path (see structure/document.py): the hierarchy
     is already known, so the LLM (if any) only enriches section content and,
     at expert level, detects cross-section relationships. A single failed
     leaf/link call is handled internally there (the deterministic skeleton
     note is kept on failure) -- but if EVERY leaf call fails, build_outline_map
-    raises, and this catches it the same way _structure()'s generic path does.
-    Returns (map, used_heuristic_fallback), same contract as _structure()."""
-    if provider is None:
+    raises, and this tries the next provider in ``provider_chain`` the same
+    way _structure()'s generic path does. Returns (map, used_heuristic_fallback,
+    used_provider), same contract as _structure()."""
+    if not provider_chain:
         with _spinner(f"Structuring ({level})…"):
-            return build_outline_skeleton(transcript, level=level), False
+            return build_outline_skeleton(transcript, level=level), False, None
 
-    with RichProgress(
-        SpinnerColumn(),
-        TextColumn("[cyan]{task.description}"),
-        BarColumn(),
-        TextColumn("{task.completed}/{task.total}"),
-        TimeElapsedColumn(),
-        console=console,
-        transient=True,
-        disable=json_mode(),
-    ) as progress:
-        task = progress.add_task("Thinking…", total=1)
+    last_exc: LLMError | None = None
+    for idx, provider in enumerate(provider_chain):
+        with RichProgress(
+            SpinnerColumn(),
+            TextColumn("[cyan]{task.description}"),
+            BarColumn(),
+            TextColumn("{task.completed}/{task.total}"),
+            TimeElapsedColumn(),
+            console=console,
+            transient=True,
+            disable=json_mode(),
+        ) as progress:
+            task = progress.add_task("Thinking…", total=1)
 
-        def on_event(kind, **d):
-            if kind == "map_start":
-                progress.update(task, description="Extracting sections", total=d["total"], completed=0)
-            elif kind == "map_progress":
-                progress.update(task, completed=d["done"])
-            elif kind == "anchor_check":
-                progress.update(task, description="Recovering dropped anchors", total=1, completed=0)
-            elif kind == "synthesis_start":
-                progress.update(task, description="Synthesizing key takeaways", total=1, completed=0)
-            elif kind == "link_start":
-                progress.update(task, description="Detecting cross-links", total=1, completed=0)
+            def on_event(kind, **d):
+                if kind == "map_start":
+                    progress.update(task, description="Extracting sections", total=d["total"], completed=0)
+                elif kind == "map_progress":
+                    progress.update(task, completed=d["done"])
+                elif kind == "anchor_check":
+                    progress.update(task, description="Recovering dropped anchors", total=1, completed=0)
+                elif kind == "synthesis_start":
+                    progress.update(task, description="Synthesizing key takeaways", total=1, completed=0)
+                elif kind == "link_start":
+                    progress.update(task, description="Detecting cross-links", total=1, completed=0)
 
-        try:
-            mm = build_outline_map(
-                transcript,
-                provider,
-                cache,
-                level=level,
-                on_event=on_event,
-                relationship_limit=relationship_limit,
-                synthesize=synthesize,
-                purpose=purpose,
-            )
-        except LLMError as exc:
-            progress.stop()
-            _print_fallback_warning(exc)
-            return build_outline_skeleton(transcript, level=level), True
-        progress.update(task, completed=progress.tasks[0].total)
-        return mm, False
+            try:
+                mm = build_outline_map(
+                    transcript,
+                    provider,
+                    cache,
+                    level=level,
+                    on_event=on_event,
+                    relationship_limit=relationship_limit,
+                    synthesize=synthesize,
+                    purpose=purpose,
+                )
+            except LLMError as exc:
+                last_exc = exc
+                progress.stop()
+                if idx < len(provider_chain) - 1:
+                    nxt = provider_chain[idx + 1]
+                    console.print(f"[yellow]![/] {provider.name} failed ({exc}); trying {nxt.name}…")
+                continue
+            progress.update(task, completed=progress.tasks[0].total)
+            return mm, False, provider
+
+    _print_fallback_warning(last_exc)
+    return build_outline_skeleton(transcript, level=level), True, None
 
 
 def _version_callback(value: bool):
@@ -497,17 +522,19 @@ def _do_map(
     for warning in transcript.warnings:
         qprint(f"[yellow]![/] {warning}")
 
-    # Resolve the engine (may fall back to the offline heuristic).
+    # Resolve the engine (may fall back to the offline heuristic). For
+    # --engine auto this is every configured provider, tried in full in
+    # order on total failure before degrading -- see resolve_provider_chain.
     try:
-        provider = resolve_provider(engine)
+        provider_chain = resolve_provider_chain(engine)
     except ConfigError as exc:
         _error(str(exc))  # ConfigError's own message already includes the actionable fix
 
-    engine_label = "heuristic (offline)" if provider is None else f"{provider.name}:{provider.model}"
-    if provider is None and engine == "auto":
+    first_provider = provider_chain[0] if provider_chain else None
+    if first_provider is None and engine == "auto":
         qprint("[yellow]![/] No API key found — using the offline heuristic engine.")
 
-    if provider is not None:
+    if first_provider is not None:
         estimated_calls = _estimate_llm_calls(transcript, level)
         if estimated_calls > _MANY_CALLS_THRESHOLD:
             qprint(
@@ -516,9 +543,13 @@ def _do_map(
                 "Consider a lower --level, a different --engine, or --engine heuristic."
             )
 
-    mm, used_fallback = _structure(transcript, level, provider, cache, relationship_limit=relationship_limit, synthesize=synthesize, purpose=purpose)
-    if used_fallback:
-        engine_label = "heuristic (offline)"
+    mm, used_fallback, used_provider = _structure(
+        transcript, level, provider_chain, cache, relationship_limit=relationship_limit, synthesize=synthesize, purpose=purpose
+    )
+    # Derived from what ACTUALLY built the map, not guessed beforehand and
+    # corrected after -- failover means the provider that succeeds isn't
+    # necessarily the first one in the chain.
+    engine_label = "heuristic (offline)" if used_provider is None else f"{used_provider.name}:{used_provider.model}"
     qprint(
         f"[green]✓[/] Map built with [bold]{engine_label}[/]: "
         f"{mm.node_count()} nodes, depth {mm.depth()}"

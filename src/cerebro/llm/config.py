@@ -111,3 +111,30 @@ def resolve_provider(engine: str, model: str | None = None):
         return GeminiProvider(key, model or "gemini-2.5-flash")
 
     raise ConfigError(f"Unknown engine: {engine!r} (use auto|groq|gemini|mock|heuristic)")
+
+
+def resolve_provider_chain(engine: str, model: str | None = None) -> list:
+    """Ordered list of providers to try for ``engine``.
+
+    'auto' tries every configured provider (Groq preferred first, matching
+    resolve_provider's own preference) -- so a TOTAL failure on one (a daily
+    quota exhaustion, a sustained rate-limit storm) fails over to trying the
+    next in full before degrading to the offline heuristic, instead of
+    giving up after just one. Live-reproduced motivation: both Groq and
+    Gemini were tried separately by hand on the same video after the first
+    failed -- this automates exactly that.
+
+    Any OTHER engine name resolves to exactly the one provider it names --
+    an explicit --engine groq/gemini is respected as asked, never silently
+    swapped for the other. Preserves resolve_provider's existing ConfigError
+    (missing key) and heuristic/mock passthrough behavior exactly."""
+    engine = (engine or "auto").lower()
+    if engine == "auto":
+        chain = []
+        if _groq_key():
+            chain.append(GroqProvider(_groq_key(), model or "llama-3.3-70b-versatile"))
+        if _gemini_key():
+            chain.append(GeminiProvider(_gemini_key(), model or "gemini-2.5-flash"))
+        return chain
+    single = resolve_provider(engine, model)
+    return [] if single is None else [single]
