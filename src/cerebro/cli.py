@@ -135,7 +135,7 @@ def _emit_result(payload: dict) -> None:
         print(json.dumps(payload, ensure_ascii=False))
 
 
-def _structure(transcript, level, provider, cache, relationship_limit=8, synthesize=True) -> tuple:
+def _structure(transcript, level, provider, cache, relationship_limit=8, synthesize=True, purpose="general") -> tuple:
     """Returns (map, used_heuristic_fallback). used_heuristic_fallback is True
     only when an LLM engine was requested but every call failed and the result
     is actually the deterministic heuristic map -- the caller needs this to
@@ -147,7 +147,7 @@ def _structure(transcript, level, provider, cache, relationship_limit=8, synthes
         # skips reduce entirely rather than asking an LLM to reinvent it.
         # _structure_document has its own (map, used_fallback) contract, same
         # shape as this function, so it's returned straight through.
-        return _structure_document(transcript, level, provider, cache, relationship_limit, synthesize)
+        return _structure_document(transcript, level, provider, cache, relationship_limit, synthesize, purpose)
 
     if provider is None:
         with _spinner(f"Structuring ({level})…"):
@@ -180,7 +180,7 @@ def _structure(transcript, level, provider, cache, relationship_limit=8, synthes
                 progress.update(task, description="Detecting cross-links", total=1, completed=0)
 
         structurer = LLMStructurer(
-            provider, cache, on_event=on_event, relationship_limit=relationship_limit, synthesize=synthesize
+            provider, cache, on_event=on_event, relationship_limit=relationship_limit, synthesize=synthesize, purpose=purpose
         )
         try:
             mm = structurer.structure(transcript, level=level)
@@ -192,7 +192,7 @@ def _structure(transcript, level, provider, cache, relationship_limit=8, synthes
         return mm, False
 
 
-def _structure_document(transcript, level, provider, cache, relationship_limit=8, synthesize=True) -> tuple:
+def _structure_document(transcript, level, provider, cache, relationship_limit=8, synthesize=True, purpose="general") -> tuple:
     """Outline-bearing source path (see structure/document.py): the hierarchy
     is already known, so the LLM (if any) only enriches section content and,
     at expert level, detects cross-section relationships. A single failed
@@ -237,6 +237,7 @@ def _structure_document(transcript, level, provider, cache, relationship_limit=8
                 on_event=on_event,
                 relationship_limit=relationship_limit,
                 synthesize=synthesize,
+                purpose=purpose,
             )
         except LLMError as exc:
             progress.stop()
@@ -357,10 +358,14 @@ def map(
     whisper_model: str = typer.Option(None, "--whisper-model", help="Whisper model size for videos with no subtitle track: tiny | base | small | medium | large-v2 | large-v3 (default: base, or your saved config) -- bigger is slower but more accurate."),
     relationship_limit: int = typer.Option(None, "--relationship-limit", "--rel-limit", help="Max number of relationships to detect in expert mode."),
     no_synthesis: bool = typer.Option(False, "--no-synthesis", help="Skip the added 'Key Takeaways' branch that structured sources (PDF/numbered-list) get at full/expert."),
+    purpose: str = typer.Option(None, "--purpose", "-p", help="Organizing goal: general | learn | review | present (default: general, or your saved config). Shapes HOW content is organized — orthogonal to --level's depth."),
     yes: bool = typer.Option(False, "--yes", "-y", help="Overwrite an existing output file without asking."),
 ):
     """Build a mind map from SOURCE and write it to disk."""
-    _do_map(source, level, fmt, out, engine, no_cache, preview, whisper_model, relationship_limit, yes, no_synthesis=no_synthesis)
+    _do_map(source, level, fmt, out, engine, no_cache, preview, whisper_model, relationship_limit, yes, no_synthesis=no_synthesis, purpose=purpose)
+
+
+_PURPOSES = ("general", "learn", "review", "present")
 
 
 def _do_map(
@@ -375,6 +380,7 @@ def _do_map(
     relationship_limit: int | None = None,
     yes: bool = False,
     no_synthesis: bool = False,
+    purpose: str | None = None,
 ) -> None:
     config = load_config()
     level = level or config.get("level") or "full"
@@ -384,6 +390,9 @@ def _do_map(
     # Synthesis is on by default; --no-synthesis or a persisted synthesis=off
     # disables it. Only structured sources (PDF/enumerated) ever act on it.
     synthesize = (not no_synthesis) and str(config.get("synthesis", "on")).lower() != "off"
+    purpose = (purpose or config.get("purpose") or "general").lower()
+    if purpose not in _PURPOSES:
+        _error(f"Unknown purpose: {purpose}", fix=f"Use one of: {', '.join(_PURPOSES)}.")
 
     if relationship_limit is None:
         cfg_lim = config.get("relationship_limit")
@@ -433,7 +442,7 @@ def _do_map(
     if provider is None and engine == "auto":
         qprint("[yellow]![/] No API key found — using the offline heuristic engine.")
 
-    mm, used_fallback = _structure(transcript, level, provider, cache, relationship_limit=relationship_limit, synthesize=synthesize)
+    mm, used_fallback = _structure(transcript, level, provider, cache, relationship_limit=relationship_limit, synthesize=synthesize, purpose=purpose)
     if used_fallback:
         engine_label = "heuristic (offline)"
     qprint(
@@ -469,6 +478,7 @@ def _do_map(
         "elapsed_seconds": round(elapsed, 2),
         "previously_mapped": previous,
         "warnings": transcript.warnings,
+        "purpose": purpose,
     })
 
 
@@ -1315,9 +1325,10 @@ _CONFIG_KEYS: dict[str, tuple[tuple[str, ...] | None, str]] = {
     "relationship_limit": (None, "8"),
     "output_dir": (None, "~/cerebro-maps"),
     "synthesis": (("on", "off"), "on"),
+    "purpose": (("general", "learn", "review", "present"), "general"),
 }
 
-_CONFIG_KEY_HELP = "level | format | engine | whisper_model | relationship_limit | output_dir | synthesis"
+_CONFIG_KEY_HELP = "level | format | engine | whisper_model | relationship_limit | output_dir | synthesis | purpose"
 
 
 @config_app.command("list")

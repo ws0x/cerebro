@@ -141,3 +141,42 @@ def test_heading_polish_system_forbids_inventing_headings():
 
 def test_folder_label_system_is_grounded_in_given_names_only():
     assert "GROUNDING RULE" in FOLDER_LABEL_SYSTEM
+
+
+# -- purpose axis ----------------------------------------------------------
+
+from cerebro.prompts import map_system, synthesis_system  # noqa: E402
+
+
+def test_general_purpose_is_byte_identical_to_the_historical_prompts():
+    # The whole backward-compat guarantee: 'general' injects nothing, so its
+    # rendered prompt equals the un-purposed text exactly.
+    assert map_system("general") == MAP_SYSTEM
+    assert reduce_system("full", "general") == reduce_system("full")
+    assert section_fill_system("full", "general") == section_fill_system("full")
+
+
+def test_unknown_purpose_is_treated_as_general():
+    assert map_system("nonsense") == MAP_SYSTEM
+
+
+def test_each_purpose_injects_a_distinct_block():
+    variants = {map_system(p) for p in ("general", "learn", "review", "present")}
+    assert len(variants) == 4  # all four render differently
+
+
+def test_learn_purpose_mentions_first_exposure_guidance():
+    text = reduce_system("full", "learn")
+    assert "LEARNING" in text
+    assert "first" in text.lower()
+
+
+def test_review_and_present_purposes_are_distinct():
+    assert reduce_system("full", "review") != reduce_system("full", "present")
+    assert "REVIEW" in reduce_system("full", "review")
+    assert "PRESENTING" in reduce_system("full", "present")
+
+
+def test_synthesis_system_carries_purpose_too():
+    assert synthesis_system("general") == synthesis_system()
+    assert "LEARNING" in synthesis_system("learn")

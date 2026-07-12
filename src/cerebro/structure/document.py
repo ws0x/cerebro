@@ -22,7 +22,7 @@ from typing import Callable
 from ..cache import Cache
 from ..ir import MindMap, Node, NodeType
 from ..llm.base import LLMError, LLMProvider
-from ..prompts import MAP_SYSTEM, PROMPT_VERSION
+from ..prompts import PROMPT_VERSION, map_system
 from ..transcript import Transcript
 from .anchors import verify_and_repair_anchors
 from .heuristic import HeuristicStructurer
@@ -121,12 +121,15 @@ def _call(provider: LLMProvider, cache: Cache, task: str, system: str, user: str
     return result
 
 
-def _enrich_one(node: Node, text: str, provider: LLMProvider, cache: Cache, level: str) -> None:
+def _enrich_one(
+    node: Node, text: str, provider: LLMProvider, cache: Cache, level: str, purpose: str = "general"
+) -> None:
     words = text.split()
     cap = _MAX_WORDS.get(level, _MAX_WORDS["full"])
     if len(words) > cap:  # honest tradeoff: an overlong section is truncated,
         text = " ".join(words[:cap])  # not sub-chunked -- keeps this a single call, like a MAP chunk.
-    result = _call(provider, cache, "map", MAP_SYSTEM, text, level, text)
+    pk = [] if purpose == "general" else [f"purpose={purpose}"]
+    result = _call(provider, cache, "map", map_system(purpose), text, level, text, *pk)
     summary = str(result.get("summary", "")).strip()
     if summary:
         node.note = summary
@@ -144,6 +147,7 @@ def _enrich_leaves(
     level: str,
     on_event: Callable[..., None],
     max_workers: int = 6,
+    purpose: str = "general",
 ) -> bool:
     """Returns True unless enrichment was attempted for at least one leaf and
     every single call failed. The caller needs this: each leaf's fallback
@@ -159,7 +163,8 @@ def _enrich_leaves(
     any_succeeded = False
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         futures = {
-            pool.submit(_enrich_one, node, text, provider, cache, level): node for node, text in todo
+            pool.submit(_enrich_one, node, text, provider, cache, level, purpose): node
+            for node, text in todo
         }
         for fut in as_completed(futures):
             try:
@@ -181,6 +186,7 @@ def build_outline_map(
     relationship_limit: int = 8,
     max_workers: int = 6,
     synthesize: bool = True,
+    purpose: str = "general",
 ) -> MindMap:
     """Build the deterministic skeleton, then -- given a provider, and above
     brief level (brief stays free even with a key configured, matching its
@@ -210,14 +216,16 @@ def build_outline_map(
     # success; a leaf whose enrichment call fails keeps this instead of
     # being left blank.
     _apply_fallback_notes(leaf_sections)
-    any_succeeded = _enrich_leaves(leaf_sections, provider, cache, level, on_event, max_workers=max_workers)
+    any_succeeded = _enrich_leaves(
+        leaf_sections, provider, cache, level, on_event, max_workers=max_workers, purpose=purpose
+    )
     if not any_succeeded:
         raise LLMError("All section-enrichment calls failed; cannot build a map.")
 
     verify_and_repair_anchors(mm, transcript.full_text, provider, cache, level, on_event=on_event)
 
     if synthesize:
-        add_synthesis(mm, provider, cache, level, on_event=on_event)
+        add_synthesis(mm, provider, cache, level, on_event=on_event, purpose=purpose)
 
     if level == "expert":
         link_relationships(
@@ -252,12 +260,14 @@ class OutlineAwareStructurer:
         relationship_limit: int = 8,
         max_workers: int = 6,
         synthesize: bool = True,
+        purpose: str = "general",
     ):
         self.provider = provider
         self.cache = cache
         self.relationship_limit = relationship_limit
         self.max_workers = max_workers
         self.synthesize = synthesize
+        self.purpose = purpose
 
     def structure(self, transcript: Transcript, level: str = "full") -> MindMap:
         if transcript.outline:
@@ -269,6 +279,7 @@ class OutlineAwareStructurer:
                 relationship_limit=self.relationship_limit,
                 max_workers=self.max_workers,
                 synthesize=self.synthesize,
+                purpose=self.purpose,
             )
         if self.provider is None:
             return HeuristicStructurer().structure(transcript, level=level)
@@ -278,4 +289,5 @@ class OutlineAwareStructurer:
             max_workers=self.max_workers,
             relationship_limit=self.relationship_limit,
             synthesize=self.synthesize,
+            purpose=self.purpose,
         ).structure(transcript, level=level)

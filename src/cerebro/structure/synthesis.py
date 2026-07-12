@@ -20,7 +20,7 @@ import json
 from ..cache import Cache
 from ..ir import MindMap, Node, NodeType
 from ..llm.base import LLMError, LLMProvider
-from ..prompts import PROMPT_VERSION, SYNTHESIS_SYSTEM
+from ..prompts import PROMPT_VERSION, synthesis_system
 
 _MIN_NODES = 3  # below this there's nothing cross-cutting to synthesize
 
@@ -38,6 +38,7 @@ def add_synthesis(
     cache: Cache,
     level: str,
     on_event=None,
+    purpose: str = "general",
 ) -> int:
     """Append a 'Key Takeaways' branch synthesizing across the map's sections.
     Additive only -- the existing spine is never modified. Returns how many
@@ -54,12 +55,13 @@ def add_synthesis(
         for i, n in enumerate(nodes)
     ]
     user = json.dumps({"title": mm.title, "map": listing}, ensure_ascii=False)
-    key = Cache.key(provider.name, provider.model, PROMPT_VERSION, "synthesis", mm.level, user)
+    pk = [] if purpose == "general" else [f"purpose={purpose}"]
+    key = Cache.key(provider.name, provider.model, PROMPT_VERSION, "synthesis", mm.level, user, *pk)
     result = cache.get(key)
     if result is None:
         on_event("synthesis_start")
         try:
-            result = provider.complete_json(SYNTHESIS_SYSTEM, user)
+            result = provider.complete_json(synthesis_system(purpose), user)
         except LLMError as exc:
             on_event("synthesis_error", error=str(exc))
             return 0

@@ -751,8 +751,25 @@ cerebro config unset level      # revert to the built-in default
 Persists to `~/.cerebro/config.json` — the same file `map`/`batch`/`tree`
 already read defaults from, previously only editable by hand. Keys: `level`,
 `format`, `engine`, `whisper_model`, `relationship_limit`, `output_dir`,
-`synthesis`. `set` validates the value against that key's allowed choices
-before writing (`output_dir` is a free-form path, not a fixed choice).
+`synthesis`, `purpose`. `set` validates the value against that key's allowed
+choices before writing (`output_dir` is a free-form path, not a fixed choice).
+
+## Purpose: organize for *why* you're reading (`--purpose`)
+
+`--level` controls how *deep* a map goes; `--purpose` controls how it's
+*organized* — the same content is shaped differently for a different reading
+goal. It's orthogonal to level.
+
+| Purpose | Organizes for | Favors |
+|---|---|---|
+| `general` *(default)* | no particular goal | today's behavior, unchanged |
+| `learn` | first exposure | fundamentals-up order, worked examples, memorable anchors |
+| `review` | already familiar | the non-obvious, connections, exceptions; compresses basics |
+| `present` | teaching others | a narrative arc, strong opening, talking-point headings |
+
+`general` is a true no-op — byte-identical prompts and cache to before this
+existed, so nothing changes unless you pick a purpose. Set it per-run
+(`--purpose learn`) or persistently (`cerebro config set purpose learn`).
 
 ## Key Takeaways synthesis (structured sources)
 

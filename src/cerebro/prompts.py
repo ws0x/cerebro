@@ -192,12 +192,52 @@ _LEVEL_NOTES = {
 MAP_SYSTEM = _MAP.format(node_types=NODE_TYPES, grounding=_GROUNDING, anchors=_ANCHORS)
 
 
-def reduce_system(level: str) -> str:
+# -- Purpose axis -----------------------------------------------------------
+
+# Orthogonal to level (which controls DEPTH). Purpose changes the ORGANIZING
+# logic -- the same content is shaped differently for a different reader goal.
+# "general" injects nothing, so its prompt is byte-identical to the historical
+# text and its cache keys never change: a zero-disruption default. Purpose is
+# appended (not woven in) so this is guaranteed.
+_PURPOSE = {
+    "general": "",
+    "learn": (
+        "PURPOSE — LEARNING (first exposure): the reader is meeting this material for the "
+        "first time. Build understanding from fundamentals up. Keep the concrete examples, "
+        "analogies, worked steps, and memorable anchors — they are how a beginner encodes an "
+        "abstract idea. Prefer a clear teaching order over the most compressed one."
+    ),
+    "review": (
+        "PURPOSE — REVIEW (already familiar): the reader knows the basics and is refreshing. "
+        "Favor the non-obvious — the connections, exceptions, and easy-to-forget details — and "
+        "the high-level structure. Compress introductory basics rather than re-explaining them."
+    ),
+    "present": (
+        "PURPOSE — PRESENTING (teaching others): this map will be used to present or teach. "
+        "Favor a clear narrative arc: a strong opening framing, a logical flow from branch to "
+        "branch, and branch titles that would work as talking points."
+    ),
+}
+
+
+def _with_purpose(system: str, purpose: str) -> str:
+    """Append the purpose block. For 'general' (or an unknown value) this
+    returns ``system`` unchanged -- byte-identical to the historical prompt."""
+    block = _PURPOSE.get(purpose or "general", "")
+    return f"{system}\n\n{block}" if block else system
+
+
+def map_system(purpose: str = "general") -> str:
+    return _with_purpose(MAP_SYSTEM, purpose)
+
+
+def reduce_system(level: str, purpose: str = "general") -> str:
     depth = LEVEL_DEPTH.get(level, LEVEL_DEPTH["full"])
     notes = _LEVEL_NOTES.get(level, _LEVEL_NOTES["full"])
-    return _REDUCE.format(
+    base = _REDUCE.format(
         node_types=NODE_TYPES, depth=depth, grounding=_GROUNDING, anchors=_ANCHORS, notes=notes
     )
+    return _with_purpose(base, purpose)
 
 
 # -- Enumerated (author-numbered list) path --------------------------------
@@ -252,11 +292,12 @@ _SECTION_POINTS_GUIDANCE = {
 }
 
 
-def section_fill_system(level: str) -> str:
+def section_fill_system(level: str, purpose: str = "general") -> str:
     guidance = _SECTION_POINTS_GUIDANCE.get(level, _SECTION_POINTS_GUIDANCE["full"])
-    return _SECTION_FILL.format(
+    base = _SECTION_FILL.format(
         node_types=NODE_TYPES, grounding=_GROUNDING, anchors=_ANCHORS, points_guidance=guidance
     )
+    return _with_purpose(base, purpose)
 
 
 # -- Anchor repair ----------------------------------------------------------
@@ -332,3 +373,7 @@ Return ONLY JSON:
 }}"""
 
 SYNTHESIS_SYSTEM = _SYNTHESIS.format(node_types=NODE_TYPES, grounding=_GROUNDING)
+
+
+def synthesis_system(purpose: str = "general") -> str:
+    return _with_purpose(SYNTHESIS_SYSTEM, purpose)

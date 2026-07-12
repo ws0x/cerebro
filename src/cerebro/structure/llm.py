@@ -23,10 +23,10 @@ from ..ir import MindMap, Node, NodeType, Relationship
 from ..llm.base import LLMError, LLMProvider
 from ..prompts import (
     HEADING_POLISH_SYSTEM,
-    MAP_SYSTEM,
     PROMPT_VERSION,
     cross_link_system,
     link_system,
+    map_system,
     reduce_system,
     section_fill_system,
 )
@@ -186,6 +186,7 @@ class LLMStructurer:
         on_event: Callable[..., None] | None = None,
         relationship_limit: int = 8,
         synthesize: bool = True,
+        purpose: str = "general",
     ):
         self.provider = provider
         self.cache = cache or Cache(enabled=False)
@@ -195,6 +196,11 @@ class LLMStructurer:
         # Synthesis applies only to the enumerated (author-numbered) path here
         # -- the free-form flat path already gets REDUCE, which does this job.
         self.synthesize = synthesize
+        # Purpose shapes the organizing prompts (map/reduce/section-fill). It's
+        # appended to the cache key only when non-general, so 'general' reuses
+        # every existing cache entry untouched.
+        self.purpose = purpose
+        self._pk = [] if purpose == "general" else [f"purpose={purpose}"]
 
     # -- cached provider call -------------------------------------------------
     def _call(self, task: str, system: str, user: str, *key_parts) -> dict:
@@ -211,7 +217,7 @@ class LLMStructurer:
 
     # -- pipeline stages ------------------------------------------------------
     def _map_chunk(self, index: int, chunk: Chunk, level: str) -> dict:
-        result = self._call("map", MAP_SYSTEM, chunk.text, level, chunk.text)
+        result = self._call("map", map_system(self.purpose), chunk.text, level, chunk.text, *self._pk)
         result["t"] = int(chunk.start)
         return result
 
@@ -243,7 +249,7 @@ class LLMStructurer:
             "note": "You may include an optional integer 't' (seconds) on any node.",
         }
         user = json.dumps(payload, ensure_ascii=False)
-        tree = self._call("reduce", reduce_system(level), user, level, user)
+        tree = self._call("reduce", reduce_system(level, self.purpose), user, level, user, *self._pk)
         if "children" not in tree:
             raise LLMError(f"REDUCE returned no tree: {str(tree)[:200]}")
         return tree
@@ -345,7 +351,7 @@ class LLMStructurer:
         capped = " ".join(text.split()[: _MAX_WORDS[level]])
         user = json.dumps({"section_title": heading, "transcript": capped}, ensure_ascii=False)
         try:
-            return self._call("section_fill", section_fill_system(level), user, level, user), True
+            return self._call("section_fill", section_fill_system(level, self.purpose), user, level, user, *self._pk), True
         except LLMError as exc:
             self.on_event("map_error", error=str(exc))
             snippet = text.strip()[:_SECTION_NOTE_FALLBACK_CHARS]
@@ -426,7 +432,7 @@ class LLMStructurer:
             mm, transcript.full_text, self.provider, self.cache, level, on_event=self.on_event
         )
         if self.synthesize:
-            add_synthesis(mm, self.provider, self.cache, level, on_event=self.on_event)
+            add_synthesis(mm, self.provider, self.cache, level, on_event=self.on_event, purpose=self.purpose)
         if level == "expert":
             link_relationships(
                 mm, self.provider, self.cache, on_event=self.on_event, relationship_limit=self.relationship_limit
