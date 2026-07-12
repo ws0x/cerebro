@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 import time
 from typing import Any, Protocol
 
@@ -14,6 +15,34 @@ from ..console import qprint
 
 class LLMError(RuntimeError):
     """Raised when a provider call fails after retries or returns junk."""
+
+
+class RateLimiter:
+    """Thread-safe minimum-interval limiter.
+
+    Each ``acquire()`` reserves the next available time slot (slots spaced at
+    least ``min_interval`` seconds apart) and sleeps until it -- so concurrent
+    MAP threads are PACED under a provider's per-minute limit rather than
+    bursting all at once and getting 429-stormed. The slot is reserved inside
+    the lock but slept for outside it, so threads don't serialize on the lock
+    while waiting. A ``min_interval`` of 0 disables it entirely (e.g. tests,
+    the offline mock)."""
+
+    def __init__(self, min_interval: float):
+        self._min_interval = max(0.0, min_interval)
+        self._lock = threading.Lock()
+        self._next_allowed = 0.0
+
+    def acquire(self) -> None:
+        if self._min_interval <= 0:
+            return
+        with self._lock:
+            now = time.monotonic()
+            slot = max(now, self._next_allowed)
+            self._next_allowed = slot + self._min_interval
+            wait = slot - now
+        if wait > 0:
+            time.sleep(wait)
 
 
 class LLMProvider(Protocol):

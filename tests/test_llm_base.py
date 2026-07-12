@@ -1,8 +1,10 @@
+import threading
+import time
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from cerebro.llm.base import LLMError, _is_daily_limit, _retry_delay, parse_json, post_json
+from cerebro.llm.base import LLMError, RateLimiter, _is_daily_limit, _retry_delay, parse_json, post_json
 
 
 def _response(status_code, text="", headers=None, json_body=None):
@@ -122,6 +124,57 @@ def test_post_json_prints_a_retry_notice(monkeypatch, capsys):
         post_json("http://x", {}, {}, retries=3)
     out = capsys.readouterr().out
     assert "rate limited" in out.lower()
+
+
+# -- rate limiter ----------------------------------------------------------
+
+def test_rate_limiter_zero_interval_never_waits():
+    limiter = RateLimiter(0)
+    start = time.monotonic()
+    for _ in range(50):
+        limiter.acquire()
+    assert time.monotonic() - start < 0.1  # effectively instant, disabled
+
+
+def test_rate_limiter_spaces_sequential_calls_by_the_interval():
+    interval = 0.05
+    limiter = RateLimiter(interval)
+    start = time.monotonic()
+    n = 4
+    for _ in range(n):
+        limiter.acquire()
+    elapsed = time.monotonic() - start
+    # First acquire is immediate; each subsequent one waits ~interval.
+    assert elapsed >= interval * (n - 1) * 0.9
+
+
+def test_rate_limiter_paces_concurrent_threads_too():
+    interval = 0.05
+    limiter = RateLimiter(interval)
+    n = 6
+    start = time.monotonic()
+
+    def worker():
+        limiter.acquire()
+
+    threads = [threading.Thread(target=worker) for _ in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    elapsed = time.monotonic() - start
+    # Even fired all at once, the n reserved slots are spaced `interval` apart,
+    # so the last one can't complete before ~(n-1)*interval.
+    assert elapsed >= interval * (n - 1) * 0.9
+
+
+def test_rate_limiter_negative_interval_is_treated_as_disabled():
+    limiter = RateLimiter(-5)
+    start = time.monotonic()
+    for _ in range(20):
+        limiter.acquire()
+    assert time.monotonic() - start < 0.1
 
 
 def test_parse_json_bare_json():

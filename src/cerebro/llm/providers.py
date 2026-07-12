@@ -8,7 +8,26 @@ pipeline and cache are testable with no key and no network.
 
 from __future__ import annotations
 
-from .base import LLMError, parse_json, post_json
+import os
+
+from .base import LLMError, RateLimiter, parse_json, post_json
+
+
+def _min_interval(env_name: str, default: float) -> float:
+    """Per-provider pacing, overridable via env for a different tier/account.
+    Defaults are deliberately a touch under each free tier's published
+    requests-per-minute so a full run of concurrent MAP calls stays a
+    well-behaved client instead of 429-storming."""
+    try:
+        return max(0.0, float(os.environ.get(env_name, default)))
+    except (TypeError, ValueError):
+        return default
+
+
+# Groq free llama-3.3-70b ~30 RPM; Gemini free 2.5-flash is tighter (~10-15
+# RPM). Slightly conservative so bursts never cross the line.
+_GROQ_MIN_INTERVAL = _min_interval("CEREBRO_GROQ_MIN_INTERVAL", 2.1)
+_GEMINI_MIN_INTERVAL = _min_interval("CEREBRO_GEMINI_MIN_INTERVAL", 4.5)
 
 
 class GroqProvider:
@@ -16,12 +35,14 @@ class GroqProvider:
 
     name = "groq"
 
-    def __init__(self, api_key: str, model: str = "llama-3.3-70b-versatile"):
+    def __init__(self, api_key: str, model: str = "llama-3.3-70b-versatile", min_interval: float | None = None):
         self.api_key = api_key
         self.model = model
         self._url = "https://api.groq.com/openai/v1/chat/completions"
+        self._limiter = RateLimiter(_GROQ_MIN_INTERVAL if min_interval is None else min_interval)
 
     def complete_json(self, system: str, user: str) -> dict:
+        self._limiter.acquire()
         payload = {
             "model": self.model,
             "messages": [
@@ -45,11 +66,13 @@ class GeminiProvider:
 
     name = "gemini"
 
-    def __init__(self, api_key: str, model: str = "gemini-2.5-flash"):
+    def __init__(self, api_key: str, model: str = "gemini-2.5-flash", min_interval: float | None = None):
         self.api_key = api_key
         self.model = model
+        self._limiter = RateLimiter(_GEMINI_MIN_INTERVAL if min_interval is None else min_interval)
 
     def complete_json(self, system: str, user: str) -> dict:
+        self._limiter.acquire()
         url = (
             f"https://generativelanguage.googleapis.com/v1beta/models/"
             f"{self.model}:generateContent?key={self.api_key}"

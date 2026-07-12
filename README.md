@@ -876,13 +876,30 @@ specific engine (`--engine groq`) but didn't set that key. Either add it to
 `.env`, or use `--engine auto` to let cerebro pick whatever's available (or
 fall back to offline).
 
+**Long videos / large files, and free-tier rate limits** — a 2-hour video is
+a lot of content, and free API tiers are limited two ways: **per-minute**
+(how fast you can call) and **per-day** (total tokens/requests). cerebro
+handles both:
+
+- **Adaptive chunking** automatically uses bigger chunks for long sources, so
+  the number of API calls stays bounded (~25) instead of scaling with length —
+  a 2-hour video is ~25 calls, not ~60. (This reduces the *number* of calls,
+  which fixes the per-minute storms and per-day request caps. It does *not*
+  reduce total *tokens* — the video's content is the same size however it's
+  chunked, so a long video still consumes real daily token budget.)
+- **Request pacing** spaces calls under each provider's per-minute limit so a
+  run never bursts into a 429 storm — it just runs a bit slower and completes
+  reliably. Tune it with `CEREBRO_GROQ_MIN_INTERVAL` / `CEREBRO_GEMINI_MIN_INTERVAL`
+  (seconds between requests) if your tier differs from the defaults.
+
 **"This is a long source — building at X will need ~N LLM calls"** — a
 pre-flight estimate, printed before any calls are spent, when a source is long
-enough to risk exhausting a free-tier daily quota (Groq's free tier caps at
-100,000 tokens/day — a single long podcast-length video can burn through a
-meaningful share of that on its own). Not a hard block, just a heads-up:
+enough to risk exhausting a free-tier daily *token* quota (Groq's free tier
+caps at 100,000 tokens/day — a single podcast-length video can use most of
+that on its own, regardless of chunking). Not a hard block, just a heads-up:
 consider a lower `--level`, `--engine gemini` (a separate quota), or
-`--engine heuristic`.
+`--engine heuristic`. For truly large jobs (many long videos, big batches),
+the un-capped answer is a local model.
 
 **The map degraded to the heuristic engine and I didn't notice until it was
 done** — a total LLM failure (including a daily-quota 429, which fails fast
