@@ -67,32 +67,46 @@ def _resolve_default_output_dir() -> Path:
     return Path.home() / "cerebro-maps"
 
 
+# NOTE: DEFAULT_OUTPUT_DIR is kept as a module-level name for
+# backward-compat (doctor.py imports it), but it is NOT used inside
+# ensure_output_dir() itself.  Resolving it once at import time means a
+# freshly-installed pipx venv — or a process that ran before config.json was
+# written — would cache the wrong path for the lifetime of the process.
+# ensure_output_dir() re-resolves on every call so it always honours the
+# current config.json and env-var state.
 DEFAULT_OUTPUT_DIR = _resolve_default_output_dir()
 _FALLBACK_OUTPUT_DIR = Path.home() / "cerebro-maps"
 
 
 def ensure_output_dir() -> Path:
-    """DEFAULT_OUTPUT_DIR may point at a synced cloud-drive letter (or any
-    other configured location) that isn't reachable right now (sync client
-    not running, different machine, drive letter never existed here) --
-    mkdir-ing into it raises, and that's not a reason for the whole command
-    to crash. Falls back to ~/cerebro-maps in that case, so a build still
-    lands somewhere real instead of failing outright -- but the user should
-    still be told, since silently landing somewhere else could otherwise
-    look like the file went missing."""
+    """Resolves and creates the correct output directory on every call.
+
+    Re-calls ``_resolve_default_output_dir()`` each time so that changes to
+    ``~/.cerebro/config.json`` (e.g. ``cerebro config set output_dir …``) or
+    the ``CEREBRO_OUTPUT_DIR`` env var are always honoured — even if this
+    process was started before the config file existed (e.g. a freshly
+    installed pipx venv used before the first ``config set`` ran).
+
+    Falls back to ``~/cerebro-maps`` if the configured directory isn't
+    reachable right now (drive not mounted, sync client offline, etc.) rather
+    than crashing the whole command, but warns the user so the unexpected
+    landing location isn't silent.
+    """
+    target = _resolve_default_output_dir()
+    fallback = _FALLBACK_OUTPUT_DIR
     try:
-        DEFAULT_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        return DEFAULT_OUTPUT_DIR
+        target.mkdir(parents=True, exist_ok=True)
+        return target
     except OSError:
-        _FALLBACK_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        fallback.mkdir(parents=True, exist_ok=True)
         try:
             from .console import json_mode, qprint
 
             if not json_mode():
                 qprint(
-                    f"[yellow]![/] {DEFAULT_OUTPUT_DIR} isn't reachable right now "
-                    f"(drive not mounted?) — saving to {_FALLBACK_OUTPUT_DIR} instead."
+                    f"[yellow]![/] {target} isn't reachable right now "
+                    f"(drive not mounted?) — saving to {fallback} instead."
                 )
         except Exception:
             pass
-        return _FALLBACK_OUTPUT_DIR
+        return fallback

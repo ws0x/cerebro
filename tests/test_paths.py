@@ -17,8 +17,13 @@ def test_global_env_path_lives_under_config_dir():
 
 
 def test_ensure_output_dir_creates_and_returns_it(tmp_path, monkeypatch):
-    target = tmp_path / "cerebro-maps"
-    monkeypatch.setattr("cerebro.paths.DEFAULT_OUTPUT_DIR", target)
+    # ensure_output_dir() re-resolves dynamically via CONFIG_DIR, so we
+    # patch CONFIG_DIR (which holds the config.json) rather than the stale
+    # DEFAULT_OUTPUT_DIR constant.
+    target = tmp_path / "my-maps"
+    monkeypatch.delenv("CEREBRO_OUTPUT_DIR", raising=False)
+    monkeypatch.setattr("cerebro.paths.CONFIG_DIR", tmp_path)
+    save_config({"output_dir": str(target)}, config_dir=tmp_path)
     assert not target.exists()
     result = ensure_output_dir()
     assert result == target
@@ -70,7 +75,10 @@ def test_resolve_default_output_dir_env_var_beats_configured_output_dir(monkeypa
 def test_ensure_output_dir_falls_back_when_preferred_dir_is_unreachable(tmp_path, monkeypatch):
     unreachable = tmp_path / "unreachable"
     fallback = tmp_path / "fallback"
-    monkeypatch.setattr("cerebro.paths.DEFAULT_OUTPUT_DIR", unreachable)
+    # Patch CONFIG_DIR so _resolve_default_output_dir() returns `unreachable`
+    monkeypatch.delenv("CEREBRO_OUTPUT_DIR", raising=False)
+    monkeypatch.setattr("cerebro.paths.CONFIG_DIR", tmp_path)
+    save_config({"output_dir": str(unreachable)}, config_dir=tmp_path)
     monkeypatch.setattr("cerebro.paths._FALLBACK_OUTPUT_DIR", fallback)
 
     original_mkdir = Path.mkdir
@@ -89,7 +97,9 @@ def test_ensure_output_dir_falls_back_when_preferred_dir_is_unreachable(tmp_path
 
 def test_ensure_output_dir_prefers_the_configured_dir_when_reachable(tmp_path, monkeypatch):
     preferred = tmp_path / "preferred"
-    monkeypatch.setattr("cerebro.paths.DEFAULT_OUTPUT_DIR", preferred)
+    monkeypatch.delenv("CEREBRO_OUTPUT_DIR", raising=False)
+    monkeypatch.setattr("cerebro.paths.CONFIG_DIR", tmp_path)
+    save_config({"output_dir": str(preferred)}, config_dir=tmp_path)
     result = ensure_output_dir()
     assert result == preferred
     assert preferred.is_dir()
@@ -100,7 +110,9 @@ def test_ensure_output_dir_fallback_does_not_crash_under_json_mode(tmp_path, mon
 
     unreachable = tmp_path / "unreachable"
     fallback = tmp_path / "fallback"
-    monkeypatch.setattr("cerebro.paths.DEFAULT_OUTPUT_DIR", unreachable)
+    monkeypatch.delenv("CEREBRO_OUTPUT_DIR", raising=False)
+    monkeypatch.setattr("cerebro.paths.CONFIG_DIR", tmp_path)
+    save_config({"output_dir": str(unreachable)}, config_dir=tmp_path)
     monkeypatch.setattr("cerebro.paths._FALLBACK_OUTPUT_DIR", fallback)
 
     original_mkdir = Path.mkdir
