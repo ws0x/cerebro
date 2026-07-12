@@ -65,3 +65,41 @@ def test_load_subtitle_file_title_from_filename(tmp_path):
     path.write_text(_SRT, encoding="utf-8")
     transcript = load_subtitle_file(path)
     assert transcript.title == "My Cool Lesson Notes"
+
+
+def test_load_utf8_subtitle_file_has_no_warnings(tmp_path):
+    path = tmp_path / "lesson.srt"
+    path.write_text(_SRT, encoding="utf-8")
+    transcript = load_subtitle_file(path)
+    assert transcript.warnings == []
+
+
+def test_load_cp1252_subtitle_file_decodes_correctly_and_warns(tmp_path):
+    # A Windows "ANSI"-saved .srt containing a raw 0x92 byte -- cp1252's
+    # curly right single-quote, not valid UTF-8. Previously this was
+    # silently mangled to U+FFFD via errors="replace".
+    body = b"1\n00:00:00,000 --> 00:00:01,500\nIt\x92s a cp1252 file.\n"
+    path = tmp_path / "lesson.srt"
+    path.write_bytes(body)
+
+    transcript = load_subtitle_file(path)
+
+    assert transcript.segments[0].text == "It’s a cp1252 file."  # real right single-quote, not U+FFFD
+    assert len(transcript.warnings) == 1
+    assert "cp1252" in transcript.warnings[0]
+    assert path.name in transcript.warnings[0]
+
+
+def test_load_latin1_subtitle_file_decodes_correctly_and_warns(tmp_path):
+    # A raw 0x81 byte is invalid both as UTF-8 and as cp1252 (unassigned in
+    # cp1252's table) but decodes fine as latin-1, the deterministic last
+    # resort.
+    body = b"1\n00:00:00,000 --> 00:00:01,500\nCaf\x81 latin-1 text.\n"
+    path = tmp_path / "lesson.srt"
+    path.write_bytes(body)
+
+    transcript = load_subtitle_file(path)
+
+    assert "�" not in transcript.segments[0].text  # no lossy replacement
+    assert len(transcript.warnings) == 1
+    assert "latin-1" in transcript.warnings[0]

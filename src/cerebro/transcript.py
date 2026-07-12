@@ -40,6 +40,9 @@ class Transcript:
     # TOC/detected headings). When present, the structurer builds the map from
     # this skeleton directly instead of inventing hierarchy from flat text.
     outline: list[OutlineEntry] = field(default_factory=list)
+    # Non-fatal, user-facing notices about the ingest itself (e.g. a subtitle
+    # file that wasn't valid UTF-8) -- surfaced by the CLI, never silent.
+    warnings: list[str] = field(default_factory=list)
 
     @property
     def full_text(self) -> str:

@@ -406,6 +406,8 @@ def _do_map(
         f"[green]✓[/] Transcript: [bold]{transcript.title}[/] "
         f"— {transcript.word_count:,} words, {len(transcript.segments):,} segments"
     )
+    for warning in transcript.warnings:
+        qprint(f"[yellow]![/] {warning}")
 
     # Resolve the engine (may fall back to the offline heuristic).
     try:
@@ -452,6 +454,7 @@ def _do_map(
         "relationships_dropped": rel_dropped,
         "elapsed_seconds": round(elapsed, 2),
         "previously_mapped": previous,
+        "warnings": transcript.warnings,
     })
 
 
