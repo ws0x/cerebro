@@ -257,3 +257,42 @@ def section_fill_system(level: str) -> str:
     return _SECTION_FILL.format(
         node_types=NODE_TYPES, grounding=_GROUNDING, anchors=_ANCHORS, points_guidance=guidance
     )
+
+
+# -- Anchor repair ----------------------------------------------------------
+
+# The compression stages (MAP/REDUCE) sometimes fold away the concrete hooks a
+# learner remembers by. Deterministic detection finds anchors present in the
+# SOURCE but absent from the finished map; this prompt re-attaches the genuine
+# ones. The candidate list may include noise (over-detected fragments,
+# already-covered items) -- the model is the precision filter, so the prompt
+# leans hard on "only genuine, currently-absent anchors; ignore the rest."
+_ANCHOR_REPAIR = """You are refining a mind map built from a source document or transcript. TASK: RE-ATTACH DROPPED ANCHORS.
+
+You receive:
+- NODES: a numbered list of the map's current nodes (id, title, optional note).
+- CANDIDATES: concrete details (numbers, named techniques, named people/books,
+  enumerated examples) detected in the SOURCE that may have been dropped from
+  the map. Some candidates are noise, already covered, or not real anchors.
+
+For each candidate that is a GENUINE concrete anchor NOT already represented in
+the map, return where it should attach and a clean title for it. Attach it to
+the single most relevant existing node (by id) as a new child. IGNORE any
+candidate that is vague, generic, already present in some node's title or note,
+or not actually a concrete anchor.
+
+GROUNDING: never invent detail. A repaired node's title is just the anchor
+itself, cleaned up (e.g. "early stopping all" → "Early Stopping"; a number like
+"13,000" stays exactly "13,000"). Do not add any fact beyond the candidate.
+
+Write titles in the same language as the node titles. Keep JSON keys in English.
+
+Return ONLY JSON:
+{{
+  "repairs": [
+    {{"to": 3, "title": "Early Stopping", "type": "one of: {node_types}"}}
+  ]
+}}
+Return an empty "repairs" list if no candidate is a genuine missing anchor."""
+
+ANCHOR_REPAIR_SYSTEM = _ANCHOR_REPAIR.format(node_types=NODE_TYPES)

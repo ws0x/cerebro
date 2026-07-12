@@ -24,6 +24,7 @@ from ..ir import MindMap, Node, NodeType
 from ..llm.base import LLMError, LLMProvider
 from ..prompts import MAP_SYSTEM, PROMPT_VERSION
 from ..transcript import Transcript
+from .anchors import verify_and_repair_anchors
 from .heuristic import HeuristicStructurer
 from .llm import LLMStructurer, link_relationships
 
@@ -210,6 +211,8 @@ def build_outline_map(
     any_succeeded = _enrich_leaves(leaf_sections, provider, cache, level, on_event, max_workers=max_workers)
     if not any_succeeded:
         raise LLMError("All section-enrichment calls failed; cannot build a map.")
+
+    verify_and_repair_anchors(mm, transcript.full_text, provider, cache, level, on_event=on_event)
 
     if level == "expert":
         link_relationships(

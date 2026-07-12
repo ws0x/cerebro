@@ -172,6 +172,8 @@ def _structure(transcript, level, provider, cache, relationship_limit=8) -> tupl
                 progress.update(task, completed=d["done"])
             elif kind == "reduce_start":
                 progress.update(task, description="Reducing into a hierarchy", total=1, completed=0)
+            elif kind == "anchor_check":
+                progress.update(task, description="Recovering dropped anchors", total=1, completed=0)
             elif kind == "link_start":
                 progress.update(task, description="Detecting cross-links", total=1, completed=0)
 
@@ -217,6 +219,8 @@ def _structure_document(transcript, level, provider, cache, relationship_limit=8
                 progress.update(task, description="Extracting sections", total=d["total"], completed=0)
             elif kind == "map_progress":
                 progress.update(task, completed=d["done"])
+            elif kind == "anchor_check":
+                progress.update(task, description="Recovering dropped anchors", total=1, completed=0)
             elif kind == "link_start":
                 progress.update(task, description="Detecting cross-links", total=1, completed=0)
 

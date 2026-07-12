@@ -31,6 +31,7 @@ from ..prompts import (
     section_fill_system,
 )
 from ..transcript import Transcript
+from .anchors import verify_and_repair_anchors
 from .enumeration import EnumeratedSection, detect_enumeration
 from .segment import Chunk, chunk_transcript
 
@@ -416,6 +417,9 @@ class LLMStructurer:
             root.children.append(results[i])
 
         mm = MindMap(title=root.title, root=root, source=transcript.source, level=level)
+        verify_and_repair_anchors(
+            mm, transcript.full_text, self.provider, self.cache, level, on_event=self.on_event
+        )
         if level == "expert":
             link_relationships(
                 mm, self.provider, self.cache, on_event=self.on_event, relationship_limit=self.relationship_limit
@@ -442,6 +446,9 @@ class LLMStructurer:
         map_results = self._map(chunks, level)
         tree = self._reduce(transcript, map_results, level)
         mm = self._to_ir(transcript, tree, level)
+        verify_and_repair_anchors(
+            mm, transcript.full_text, self.provider, self.cache, level, on_event=self.on_event
+        )
         if level == "expert":
             link_relationships(
                 mm,
