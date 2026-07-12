@@ -314,12 +314,13 @@ own title, or the folder's own name for `batch`/`tree` — not the current
 directory, so files don't scatter across wherever you happened to run the
 command from.
 
-That folder defaults to `~/cerebro-maps/`, but this specific build's
-`paths.py` can point it somewhere else instead (e.g. a synced cloud-drive
-folder) — set the **`CEREBRO_OUTPUT_DIR`** environment variable to override
-it without touching code. If the configured folder isn't reachable when
-cerebro runs (an unmounted drive, a sync client that isn't running), it
-falls back to `~/cerebro-maps/` automatically and tells you it did.
+That folder defaults to `~/cerebro-maps/`. To point it somewhere else
+instead (e.g. a synced cloud-drive folder), either run
+`cerebro config set output_dir /path/to/folder` for a persistent default, or
+set the **`CEREBRO_OUTPUT_DIR`** environment variable (takes priority over
+the config value). If the configured folder isn't reachable when cerebro
+runs (an unmounted drive, a sync client that isn't running), it falls back
+to `~/cerebro-maps/` automatically and tells you it did.
 
 Mapping the exact same source at the exact same level/format again prints a
 note pointing at the previous output instead of silently rebuilding — purely
@@ -732,8 +733,9 @@ cerebro config unset level      # revert to the built-in default
 
 Persists to `~/.cerebro/config.json` — the same file `map`/`batch`/`tree`
 already read defaults from, previously only editable by hand. Keys: `level`,
-`format`, `engine`, `whisper_model`, `relationship_limit`. `set` validates
-the value against that key's allowed choices before writing.
+`format`, `engine`, `whisper_model`, `relationship_limit`, `output_dir`.
+`set` validates the value against that key's allowed choices before writing
+(`output_dir` is a free-form path, not a fixed choice).
 
 ## Diagnosing your setup (`cerebro doctor`)
 

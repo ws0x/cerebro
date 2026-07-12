@@ -1291,7 +1291,10 @@ _CONFIG_KEYS: dict[str, tuple[tuple[str, ...] | None, str]] = {
     "engine": (("auto", "groq", "gemini", "heuristic"), "auto"),
     "whisper_model": (("tiny", "base", "small", "medium", "large-v2", "large-v3"), "base"),
     "relationship_limit": (None, "8"),
+    "output_dir": (None, "~/cerebro-maps"),
 }
+
+_CONFIG_KEY_HELP = "level | format | engine | whisper_model | relationship_limit | output_dir"
 
 
 @config_app.command("list")
@@ -1308,7 +1311,7 @@ def config_list():
 
 
 @config_app.command("get")
-def config_get(key: str = typer.Argument(..., help="level | format | engine | whisper_model | relationship_limit")):
+def config_get(key: str = typer.Argument(..., help=_CONFIG_KEY_HELP)):
     """Print one config key's current value (persisted, or the built-in default)."""
     if key not in _CONFIG_KEYS:
         console.print(f"[red]✗[/] Unknown config key: {key} (known: {', '.join(_CONFIG_KEYS)})")
@@ -1319,7 +1322,7 @@ def config_get(key: str = typer.Argument(..., help="level | format | engine | wh
 
 @config_app.command("set")
 def config_set(
-    key: str = typer.Argument(..., help="level | format | engine | whisper_model | relationship_limit"),
+    key: str = typer.Argument(..., help=_CONFIG_KEY_HELP),
     value: str = typer.Argument(..., help="The new value — must match the key's allowed choices."),
 ):
     """Persist a default so map/batch/tree don't need the flag every time."""
@@ -1340,7 +1343,7 @@ def config_set(
 
 
 @config_app.command("unset")
-def config_unset(key: str = typer.Argument(..., help="level | format | engine | whisper_model | relationship_limit")):
+def config_unset(key: str = typer.Argument(..., help=_CONFIG_KEY_HELP)):
     """Remove a persisted default, reverting that key to cerebro's built-in default."""
     config = load_config()
     if key not in config:

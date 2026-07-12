@@ -1,6 +1,14 @@
 from pathlib import Path
 
-from cerebro.paths import CONFIG_DIR, DEFAULT_OUTPUT_DIR, GLOBAL_ENV_PATH, ensure_output_dir, load_config
+from cerebro.paths import (
+    CONFIG_DIR,
+    DEFAULT_OUTPUT_DIR,
+    GLOBAL_ENV_PATH,
+    _resolve_default_output_dir,
+    ensure_output_dir,
+    load_config,
+    save_config,
+)
 
 
 def test_global_env_path_lives_under_config_dir():
@@ -21,7 +29,7 @@ def test_default_output_dir_is_absolute():
     assert DEFAULT_OUTPUT_DIR.is_absolute()
 
 
-def test_default_output_dir_env_var_overrides_the_hardcoded_default(monkeypatch, tmp_path):
+def test_default_output_dir_env_var_overrides_the_default(monkeypatch, tmp_path):
     # Re-import to exercise the module-load-time os.environ.get(...) read --
     # DEFAULT_OUTPUT_DIR itself is a plain constant, not re-evaluated per
     # call, so this only proves the override works at import time, same as
@@ -36,6 +44,27 @@ def test_default_output_dir_env_var_overrides_the_hardcoded_default(monkeypatch,
         assert paths_module.DEFAULT_OUTPUT_DIR == tmp_path
     finally:
         importlib.reload(paths_module)  # restore the real default for every other test
+
+
+def test_resolve_default_output_dir_falls_back_to_home_cerebro_maps(monkeypatch, tmp_path):
+    monkeypatch.delenv("CEREBRO_OUTPUT_DIR", raising=False)
+    monkeypatch.setattr("cerebro.paths.CONFIG_DIR", tmp_path)  # no config.json here -- empty config
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    assert _resolve_default_output_dir() == tmp_path / "cerebro-maps"
+
+
+def test_resolve_default_output_dir_uses_configured_output_dir(monkeypatch, tmp_path):
+    monkeypatch.delenv("CEREBRO_OUTPUT_DIR", raising=False)
+    monkeypatch.setattr("cerebro.paths.CONFIG_DIR", tmp_path)
+    save_config({"output_dir": str(tmp_path / "my-maps")}, config_dir=tmp_path)
+    assert _resolve_default_output_dir() == tmp_path / "my-maps"
+
+
+def test_resolve_default_output_dir_env_var_beats_configured_output_dir(monkeypatch, tmp_path):
+    monkeypatch.setattr("cerebro.paths.CONFIG_DIR", tmp_path)
+    save_config({"output_dir": str(tmp_path / "from-config")}, config_dir=tmp_path)
+    monkeypatch.setenv("CEREBRO_OUTPUT_DIR", str(tmp_path / "from-env"))
+    assert _resolve_default_output_dir() == tmp_path / "from-env"
 
 
 def test_ensure_output_dir_falls_back_when_preferred_dir_is_unreachable(tmp_path, monkeypatch):

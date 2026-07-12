@@ -108,6 +108,20 @@ def test_config_set_get_list_unset_round_trip(tmp_path, monkeypatch):
     assert "None" in result.stdout or "expert" not in result.stdout
 
 
+def test_config_set_output_dir_is_a_recognized_key(tmp_path, monkeypatch):
+    monkeypatch.setattr("cerebro.paths.CONFIG_DIR", tmp_path)
+    custom = str(tmp_path / "my-maps")
+
+    result = runner.invoke(app, ["config", "set", "output_dir", custom])
+    assert result.exit_code == 0
+
+    result = runner.invoke(app, ["config", "get", "output_dir"])
+    assert result.exit_code == 0
+    # Rich may hard-wrap a long path at the console width, so compare with
+    # newlines collapsed rather than requiring an unbroken substring match.
+    assert custom in result.stdout.replace("\n", "")
+
+
 def test_cache_stats_reports_location_and_count(tmp_path, monkeypatch):
     monkeypatch.setattr("cerebro.cache.CACHE_DIR", tmp_path)
     result = runner.invoke(app, ["cache", "stats"])
