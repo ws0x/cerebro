@@ -246,6 +246,48 @@ def test_post_json_without_a_rate_limiter_still_works_normally(monkeypatch):
         assert post_json("http://x", {}, {}, retries=3) == {"ok": True}
 
 
+def test_post_json_acquires_the_limiter_again_before_each_retry(monkeypatch):
+    # The actual bug this guards against: a retry that only sleeps its own
+    # local delay and never re-takes a slot in the shared queue lets
+    # concurrent threads' retries fire uncoordinated, re-colliding with the
+    # real rate limit even after backoff() raised the interval. A retry is a
+    # genuinely new HTTP request and must be paced exactly like a fresh one.
+    monkeypatch.setattr("time.sleep", lambda _: None)
+    limiter = MagicMock()
+    limiter.hit_limit = False
+    responses = [_response(429, text="rate limit exceeded"), _response(200, json_body={"ok": True})]
+    with patch("requests.post", side_effect=responses):
+        post_json("http://x", {}, {}, retries=3, rate_limiter=limiter)
+    limiter.backoff.assert_called_once()
+    limiter.acquire.assert_called_once()  # once, for the single retry before success
+
+
+def test_post_json_does_not_acquire_the_limiter_again_on_a_daily_limit(monkeypatch):
+    # A daily-quota 429 fails fast with no retry at all -- there is no retry
+    # attempt to pace, so acquire() must not be called an extra time here.
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    limiter = MagicMock()
+    daily_limit_resp = _response(429, text="tokens per day (TPD): Limit 100000, Used 99559")
+    with patch("requests.post", return_value=daily_limit_resp):
+        with pytest.raises(LLMError, match="Daily quota exhausted"):
+            post_json("http://x", {}, {}, retries=3, rate_limiter=limiter)
+    limiter.acquire.assert_not_called()
+    limiter.backoff.assert_not_called()
+
+
+def test_post_json_acquires_the_limiter_for_every_retry_across_multiple_failures(monkeypatch):
+    monkeypatch.setattr("time.sleep", lambda _: None)
+    limiter = MagicMock()
+    responses = [
+        _response(429, text="rate limit exceeded"),
+        _response(429, text="rate limit exceeded"),
+        _response(200, json_body={"ok": True}),
+    ]
+    with patch("requests.post", side_effect=responses):
+        post_json("http://x", {}, {}, retries=3, rate_limiter=limiter)
+    assert limiter.acquire.call_count == 2  # two retries before the third attempt succeeds
+
+
 def test_parse_json_bare_json():
     assert parse_json('{"label": "hello"}') == {"label": "hello"}
 

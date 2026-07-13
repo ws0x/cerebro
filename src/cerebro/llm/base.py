@@ -195,6 +195,15 @@ def post_json(
                 reason = "rate limited (429)" if last_status == 429 else f"request failed ({exc})"
                 qprint(f"[dim]  ⏳ {reason} — retrying in {delay:.0f}s… ({attempt + 1}/{retries - 1})[/]")
                 time.sleep(delay)
+                if rate_limiter is not None:
+                    # A retry is a genuinely new HTTP request, not a continuation
+                    # of the old one -- it must take its own slot in the SAME
+                    # shared queue as fresh calls. Without this, concurrent
+                    # threads' retries fire the moment their own local delay
+                    # expires, independent of each other and of backoff()'s
+                    # just-raised interval, and re-collide with the real limit
+                    # exactly as before backoff() existed.
+                    rate_limiter.acquire()
     if last_status == 429:
         raise LLMError(
             f"Rate limited after {retries} attempts (HTTP 429). Free-tier limits "
