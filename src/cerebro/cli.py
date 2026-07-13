@@ -1222,6 +1222,16 @@ def _render_quota_panel(name: str, model: str, entry: dict):
         if not entry or (entry.get("calls_today") in (None, 0) and not last):
             grid.add_row("", "[dim]No data yet — run with --refresh, or make a real map call first.[/]")
 
+    daily = entry.get("daily_budget")
+    if daily:
+        # A separate cumulative daily budget some providers (Groq, live-
+        # confirmed) enforce on top of whatever the live headers/local count
+        # above already show -- only ever visible reactively, the moment a
+        # real call actually hits it, never proactively.
+        grid.add_row("", "")
+        grid.add_row("Daily token budget", _quota_bar(daily["used"], daily["value"]))
+        grid.add_row("", f"[dim]hit at {_format_local_time(daily['hit_at'])} — not shown by any header, only revealed when hit[/]")
+
     return Panel(grid, title=f"[cyan]{name}[/] · {model}", border_style="cyan", expand=False, padding=(1, 2))
 
 

@@ -149,6 +149,57 @@ def test_a_non_429_gemini_response_does_not_touch_last_known_limit():
     assert "last_known_limit" not in entry
 
 
+# -- record_response_quota: Groq-style daily budget (a SEPARATE dimension from
+# the per-minute/per-day headers -- confirmed live: a real map run hit this
+# while x-ratelimit-remaining-requests/-tokens both still showed near-zero
+# usage) --------------------------------------------------------------------
+
+def test_records_groqs_daily_token_budget_from_the_error_message():
+    # The exact phrasing live-observed from a real Groq daily-quota 429.
+    resp = _response(429, text="Rate limit reached ... on tokens per day (TPD): Limit 100000, Used 99559")
+    record_response_quota("groq", "llama-3.3-70b-versatile", resp)
+    entry = load_quota()["groq"]
+    daily = entry["daily_budget"]
+    assert daily["metric"] == "tokens per day (TPD)"
+    assert daily["value"] == 100000
+    assert daily["used"] == 99559
+    assert "hit_at" in daily
+
+
+def test_records_groqs_daily_request_budget_variant():
+    resp = _response(429, text="on requests per day (RPD): Limit 1000, Used 1000")
+    record_response_quota("groq", "llama-3.3-70b-versatile", resp)
+    daily = load_quota()["groq"]["daily_budget"]
+    assert daily["metric"] == "requests per day (RPD)"
+    assert daily["value"] == 1000
+    assert daily["used"] == 1000
+
+
+def test_groq_daily_budget_is_recorded_alongside_live_headers_not_instead_of_them():
+    # A real Groq 429 includes the rate-limit headers too (they're on every
+    # response) -- both dimensions must be captured, not just whichever the
+    # if/elif happened to check first.
+    resp = _response(
+        429,
+        headers={
+            "x-ratelimit-limit-requests": "1000",
+            "x-ratelimit-remaining-requests": "998",
+        },
+        text="on tokens per day (TPD): Limit 100000, Used 100000",
+    )
+    record_response_quota("groq", "llama-3.3-70b-versatile", resp)
+    entry = load_quota()["groq"]
+    assert entry["source"] == "live_headers"
+    assert entry["remaining_requests"] == 998
+    assert entry["daily_budget"]["used"] == 100000
+
+
+def test_groq_daily_budget_pattern_does_not_leak_into_gemini_last_known_limit():
+    resp = _response(429, text="on tokens per day (TPD): Limit 100000, Used 99559")
+    record_response_quota("groq", "llama-3.3-70b-versatile", resp)
+    assert "last_known_limit" not in load_quota()["groq"]
+
+
 def test_record_response_quota_with_none_response_is_a_noop():
     record_response_quota("groq", "llama-3.3-70b-versatile", None)
     assert load_quota() == {}
