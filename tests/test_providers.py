@@ -11,10 +11,20 @@ import pytest
 from cerebro.llm.providers import GeminiProvider, GroqProvider
 
 
+@pytest.fixture(autouse=True)
+def _isolate_quota_file(tmp_path, monkeypatch):
+    # complete_json() unconditionally records a call attempt + response
+    # quota -- without this, every test in this file would silently write
+    # fake-key test data over the real ~/.cerebro/quota.json on whatever
+    # machine runs the suite.
+    monkeypatch.setattr("cerebro.llm.quota.QUOTA_PATH", tmp_path / "quota.json")
+
+
 def _groq_response():
     resp = MagicMock()
     resp.status_code = 200
     resp.ok = True
+    resp.headers = {}
     resp.json.return_value = {"choices": [{"message": {"content": '{"ok": true}'}}]}
     return resp
 
@@ -23,6 +33,7 @@ def _gemini_response():
     resp = MagicMock()
     resp.status_code = 200
     resp.ok = True
+    resp.headers = {}
     resp.json.return_value = {"candidates": [{"content": {"parts": [{"text": '{"ok": true}'}]}}]}
     return resp
 

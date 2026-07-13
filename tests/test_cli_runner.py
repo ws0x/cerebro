@@ -30,6 +30,7 @@ _HELP_INVOCATIONS = [
     ["tree", "--help"],
     ["setup", "--help"],
     ["doctor", "--help"],
+    ["quota", "--help"],
     ["status", "--help"],
     ["search", "--help"],
     ["merge", "--help"],

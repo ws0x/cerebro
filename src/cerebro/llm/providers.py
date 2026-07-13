@@ -13,6 +13,7 @@ import os
 
 from .base import LLMError, RateLimiter, parse_json, post_json
 from .pacing import load_pacing
+from .quota import record_call_attempt
 
 
 def _min_interval(env_name: str, default: float) -> float:
@@ -64,6 +65,7 @@ class GroqProvider:
         self._limiter = RateLimiter(min_interval)
 
     def complete_json(self, system: str, user: str) -> dict:
+        record_call_attempt(self.name, self.model)
         self._limiter.acquire()
         payload = {
             "model": self.model,
@@ -75,7 +77,9 @@ class GroqProvider:
             "temperature": 0.2,
         }
         headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
-        data = post_json(self._url, headers, payload, rate_limiter=self._limiter)
+        data = post_json(
+            self._url, headers, payload, rate_limiter=self._limiter, provider_name=self.name, model=self.model
+        )
         try:
             content = data["choices"][0]["message"]["content"]
         except (KeyError, IndexError) as exc:
@@ -96,6 +100,7 @@ class GeminiProvider:
         self._limiter = RateLimiter(min_interval)
 
     def complete_json(self, system: str, user: str) -> dict:
+        record_call_attempt(self.name, self.model)
         self._limiter.acquire()
         url = (
             f"https://generativelanguage.googleapis.com/v1beta/models/"
@@ -106,7 +111,14 @@ class GeminiProvider:
             "contents": [{"parts": [{"text": user}]}],
             "generationConfig": {"response_mime_type": "application/json", "temperature": 0.2},
         }
-        data = post_json(url, {"Content-Type": "application/json"}, payload, rate_limiter=self._limiter)
+        data = post_json(
+            url,
+            {"Content-Type": "application/json"},
+            payload,
+            rate_limiter=self._limiter,
+            provider_name=self.name,
+            model=self.model,
+        )
         try:
             content = data["candidates"][0]["content"]["parts"][0]["text"]
         except (KeyError, IndexError) as exc:

@@ -11,6 +11,7 @@ from typing import Any, Protocol
 import requests
 
 from ..console import qprint
+from .quota import record_response_quota
 
 
 class LLMError(RuntimeError):
@@ -152,6 +153,8 @@ def post_json(
     timeout: int = 60,
     retries: int = 3,
     rate_limiter: "RateLimiter | None" = None,
+    provider_name: str | None = None,
+    model: str | None = None,
 ) -> dict:
     """POST with exponential backoff; retries 429/5xx and network errors.
 
@@ -167,6 +170,12 @@ def post_json(
     mid-run: the shared limiter slows down for every subsequent call across
     the whole thread pool the moment any one of them discovers the assumed
     interval was too fast, not just this call's own retry delay.
+
+    ``provider_name``/``model``, when given, feed every real response (success
+    or failure alike) to ``record_response_quota`` -- Groq's account-level
+    remaining-quota headers are present on every response regardless of
+    status, so this is how `cerebro quota` gets genuinely live numbers
+    without a dedicated usage-check call.
     """
     last_exc: Exception | None = None
     last_status: int | None = None
@@ -174,6 +183,8 @@ def post_json(
         resp: requests.Response | None = None
         try:
             resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
+            if provider_name:
+                record_response_quota(provider_name, model or "", resp)
             if resp.status_code in (429, 500, 502, 503, 504):
                 last_status = resp.status_code
                 raise LLMError(f"HTTP {resp.status_code}: {resp.text[:200]}")

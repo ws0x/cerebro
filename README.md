@@ -801,6 +801,29 @@ or a second engine's key is reported as an advisory (`!`), not a failure;
 `cerebro doctor` only exits non-zero on a hard failure (an unsupported
 Python version, a missing core dependency, an unwritable storage path).
 
+## Checking API quota usage (`cerebro quota`)
+
+```bash
+cerebro quota            # show whatever's already known
+cerebro quota --refresh  # make one tiny real call per provider first, for fresh numbers
+```
+
+Groq returns real `x-ratelimit-*` headers on every response (success or
+429) — exact requests-per-day and tokens-per-minute usage straight from
+your account, not estimated, shown as colored progress bars (green under
+60% used, yellow 60-85%, red above) with reset countdowns.
+
+Gemini's API has no equivalent (confirmed against its own docs — the only
+place to see usage is a web dashboard in AI Studio, nothing programmatic
+with just an API key), so its panel shows cerebro's own recorded call count
+for today instead, clearly labeled as that rather than presented as your
+account's true remaining quota. If a real call has ever hit a 429, the
+specific limit it revealed (e.g. "20 req/day") is shown too, since Gemini's
+error message happens to embed it in plain text.
+
+`--refresh` costs one small real API call per configured provider — worth
+it right before a big long-source run, not something to run in a loop.
+
 ## Full-page dashboard (`cerebro dashboard`)
 
 ```bash
@@ -1001,6 +1024,7 @@ word-count budget staying only as a hard ceiling.
 | `cerebro.batch` | Fan-out + merge for playlists and course folders |
 | `cerebro.foldermap` | Directory structure → `MindMap` IR, for `cerebro tree` — a separate concern from the video pipeline entirely |
 | `cerebro.llm` | Provider abstraction (Groq / Gemini / mock) |
+| `cerebro.llm.quota` | Real Groq usage headers + Gemini local call tracking, for `cerebro quota` |
 | `cerebro.cache` | Content-addressed caching |
 | `cerebro.paths` | Stable locations (`~/.cerebro/.env`, a configurable default output folder via `CEREBRO_OUTPUT_DIR`) so a globally-installed CLI works the same from any directory |
 | `cerebro.ui` | Rich banner, progress, and the in-terminal map preview |

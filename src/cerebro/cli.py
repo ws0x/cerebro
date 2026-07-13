@@ -7,6 +7,7 @@ import re
 import sys
 import time
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -62,6 +63,7 @@ from .llm.base import LLMError
 from .llm.config import ConfigError, load_env, read_env_file, resolve_provider, resolve_provider_chain, write_env_file
 from .llm.pacing import record_pacing
 from .llm.providers import DEFAULT_INTERVALS
+from .llm.quota import load_quota
 from .manifest import lookup as manifest_lookup
 from .manifest import record as manifest_record
 from .merge import MergeError, merge_maps, read_map
@@ -382,34 +384,38 @@ def _no_color_callback(value: bool):
     # Mutated on the one shared Console (see console.py), not a fresh
     # instance — Rich reads .no_color live at render time, so this reaches
     # every module that already imported it, in whatever order they did.
-    if value:
-        console.no_color = True
+    # Set unconditionally (not just "if value: ...True") -- these globals
+    # persist for the life of the process, and a one-shot real CLI
+    # invocation never notices, but anything that reuses the same `app` (a
+    # test suite's CliRunner, or embedding cerebro as a library) would
+    # otherwise have one invocation's --no-color leak into the next one that
+    # never asked for it.
+    console.no_color = bool(value)
     return value
 
 
 def _ascii_callback(value: bool):
-    if value:
-        set_ascii(True)
+    set_ascii(bool(value))
     return value
 
 
 def _theme_callback(value: str):
     if value == "high-contrast":
         set_high_contrast(True)
-    elif value not in ("default", None):
+    elif value in ("default", None):
+        set_high_contrast(False)
+    else:
         raise typer.BadParameter("must be 'default' or 'high-contrast'")
     return value
 
 
 def _quiet_callback(value: bool):
-    if value:
-        set_quiet(True)
+    set_quiet(bool(value))
     return value
 
 
 def _json_callback(value: bool):
-    if value:
-        set_json(True)
+    set_json(bool(value))
     return value
 
 
@@ -459,6 +465,14 @@ def _main(
     """Cerebro root."""
     if _HELP_REQUESTED:
         return  # a --help lookup is a reference check, not a real run
+    # Recombined here, once, as the single authoritative point -- Click runs
+    # each eager option's own callback during parameter parsing, but doesn't
+    # guarantee _quiet_callback runs before or after _json_callback, so
+    # letting --json's callback "cascade" into set_quiet(True) is a race:
+    # whichever of the two callbacks happens to run last wins. This line
+    # runs strictly after BOTH callbacks have already fired (it's the
+    # command body), so it can't be clobbered either way.
+    set_quiet(quiet or as_json)
     # dashboard renders its own banner as the header of its full-page layout —
     # printing this one first would either flash-and-vanish once the
     # alternate screen buffer takes over, or (no real terminal) duplicate it.
@@ -1131,6 +1145,143 @@ def doctor(
 
     if has_failures(checks):
         raise typer.Exit(code=1)
+
+
+def _quota_bar(used: int, total: int, width: int = 28) -> str:
+    """A colored block bar: green under 60% used, yellow 60-85%, red above --
+    the same semantic thresholds a person would want before a burn-rate
+    becomes a real problem, not just an arbitrary gradient."""
+    if total <= 0:
+        return "[dim]n/a[/]"
+    pct = max(0.0, min(1.0, used / total))
+    filled = round(pct * width)
+    color = "green" if pct < 0.6 else "yellow" if pct < 0.85 else "red"
+    bar = "█" * filled + "░" * (width - filled)
+    return f"[{color}]{bar}[/] [bold]{used:,}[/]/{total:,} ({pct * 100:.0f}%)"
+
+
+def _format_duration(seconds: float) -> str:
+    seconds = max(0.0, seconds)
+    if seconds < 1:
+        return f"{seconds * 1000:.0f}ms"
+    if seconds < 60:
+        return f"{seconds:.0f}s"
+    minutes, s = divmod(int(seconds), 60)
+    if minutes < 60:
+        return f"{minutes}m{s:02d}s"
+    hours, m = divmod(minutes, 60)
+    return f"{hours}h{m:02d}m"
+
+
+def _format_local_time(iso: str) -> str:
+    try:
+        return datetime.fromisoformat(iso).astimezone().strftime("%H:%M:%S")
+    except ValueError:
+        return iso
+
+
+def _render_quota_panel(name: str, model: str, entry: dict):
+    grid = Table.grid(padding=(0, 1, 0, 0))
+    grid.add_column(style="dim", min_width=16)
+    grid.add_column()
+
+    if entry.get("source") == "live_headers":
+        observed = entry.get("observed_at")
+        if observed:
+            grid.add_row("", f"[dim]as of {_format_local_time(observed)}[/]")
+
+        limit_requests = entry.get("limit_requests")
+        if limit_requests:
+            used = limit_requests - entry.get("remaining_requests", limit_requests)
+            grid.add_row("Requests today", _quota_bar(used, limit_requests))
+            reset = entry.get("reset_requests_seconds")
+            if reset is not None:
+                grid.add_row("", f"[dim]resets in {_format_duration(reset)}[/]")
+
+        limit_tokens = entry.get("limit_tokens")
+        if limit_tokens:
+            used_t = limit_tokens - entry.get("remaining_tokens", limit_tokens)
+            grid.add_row("Tokens/minute", _quota_bar(used_t, limit_tokens))
+            reset_t = entry.get("reset_tokens_seconds")
+            if reset_t is not None:
+                grid.add_row("", f"[dim]resets in {_format_duration(reset_t)}[/]")
+
+        calls_today = entry.get("calls_today")
+        if calls_today is not None:
+            grid.add_row("Calls via cerebro", f"{calls_today} today [dim](cross-check against the real count above)[/]")
+    else:
+        grid.add_row("", "[yellow]![/] No live quota API for this provider — showing cerebro's own recorded usage.")
+        grid.add_row("Calls today", str(entry.get("calls_today", "0")) if entry else "0")
+        last = entry.get("last_known_limit")
+        if last:
+            metric = last["metric"].rsplit("/", 1)[-1]  # drop the googleapis.com/... prefix, keep the meaningful part
+            grid.add_row(
+                "Last known limit",
+                f"{last['value']} req/day ({metric}) — hit at {_format_local_time(last['hit_at'])}",
+            )
+        if not entry or (entry.get("calls_today") in (None, 0) and not last):
+            grid.add_row("", "[dim]No data yet — run with --refresh, or make a real map call first.[/]")
+
+    return Panel(grid, title=f"[cyan]{name}[/] · {model}", border_style="cyan", expand=False, padding=(1, 2))
+
+
+@app.command()
+def quota(
+    refresh: bool = typer.Option(
+        False,
+        "--refresh",
+        "-r",
+        help="Make one tiny real API call per configured provider first, so the numbers reflect right now instead of whenever the last real map/tree/batch call happened to leave off.",
+    ),
+):
+    """Show current API quota/rate-limit usage for every configured provider.
+
+    Groq returns real remaining-quota headers on every response, so its
+    numbers are exact (as of the last real call, or right now with
+    --refresh). Gemini's API has no equivalent — confirmed against its own
+    docs, the only place to see usage is a web dashboard — so it shows
+    cerebro's own recorded call count instead, clearly labeled as that
+    rather than presented as your account's true remaining quota.
+    """
+    load_env()
+    configured: list = []
+    for name in ("groq", "gemini"):
+        try:
+            configured.append(resolve_provider(name))
+        except ConfigError:
+            continue
+
+    if not configured:
+        msg = "No API keys configured — nothing to report. Run `cerebro setup` first."
+        if json_mode():
+            _emit_result({"ok": False, "error": msg})
+            raise typer.Exit(code=1)
+        console.print(f"[yellow]![/] {msg}")
+        raise typer.Exit(code=1)
+
+    if refresh:
+        with _spinner("Checking live quota…"):
+            for provider in configured:
+                try:
+                    # Groq's json_object response format 400s unless the
+                    # word "json" appears somewhere in the messages -- a
+                    # generic "reply with OK" prompt genuinely fails this,
+                    # confirmed live.
+                    provider.complete_json(
+                        "You are a connectivity check. Respond only with JSON.",
+                        'Reply with exactly this JSON: {"ok": true}',
+                    )
+                except LLMError:
+                    pass  # a failure IS the data point for an exhausted quota -- already recorded
+
+    data = load_quota()
+
+    if json_mode():
+        _emit_result({"ok": True, "providers": {p.name: data.get(p.name, {}) for p in configured}})
+        return
+
+    for provider in configured:
+        console.print(_render_quota_panel(provider.name, provider.model, data.get(provider.name, {})))
 
 
 @app.command()
