@@ -5,7 +5,7 @@ literal JSON braces doubled (``{{`` / ``}}``). Bump ``PROMPT_VERSION`` whenever 
 prompt changes so the cache invalidates cleanly (it is part of every cache key).
 """
 
-PROMPT_VERSION = "v7"
+PROMPT_VERSION = "v8"
 
 NODE_TYPES = "topic, concept, definition, example, insight, action, warning, question, detail"
 
@@ -25,8 +25,23 @@ the abstract point; a map without them is forgettable.
   fate'); type it "example".
 - a named book, person, study, framework, or place (e.g. "Man's Search for
   Meaning") → type it "insight".
-- a concrete personal story or vivid example (e.g. tearing a muscle before the
-  competition and showing up anyway) → a short phrase naming it, type "example".
+- a concrete personal story the speaker says happened to THEM (e.g. tearing a
+  muscle before the competition and showing up anyway) → a short phrase naming
+  it, type "example".
+- a vivid but impersonal illustrative example, hypothetical, or comparison
+  (e.g. "even if it's an 18-car pileup", used to illustrate a general point,
+  not something that happened to anyone) → keep it as an example too, but
+  never call it personal or attribute it to the speaker's own life.
+
+FRAMING RULE (a common failure mode — read carefully): match the source's own
+framing of WHAT KIND of statement something is. A concrete detail is not
+automatically a personal anecdote just because it is vivid or specific — only
+call something "a personal experience/anecdote" if the source actually frames
+it that way (first person, "I/my/happened to me"), never because it merely
+sits next to real personal stories or shares their general shape. When several
+similar-looking points end up grouped together, write each one's note from
+that point's OWN content — do not copy one sibling's correct description onto
+another that doesn't actually earn it.
 
 NUMERIC ANCHORS (a common failure mode — read carefully): any specific number,
 count, percentage, statistic, date, price, or measurement is NON-NEGOTIABLE and

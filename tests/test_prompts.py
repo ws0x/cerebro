@@ -57,6 +57,26 @@ def test_map_system_numeric_anchor_rule_is_emphatic_and_non_negotiable():
     assert "digit-for-digit" in MAP_SYSTEM
 
 
+def test_map_system_distinguishes_personal_stories_from_impersonal_examples():
+    # Regression guard for a real live-observed hallucination: a generic
+    # illustrative example ("even if it's an 18-car pileup") got labeled "a
+    # personal anecdote shared by the speaker" -- it wasn't, it was a
+    # hypothetical used to illustrate American media enthusiasm. The old
+    # ANCHOR bullet conflated "personal story" and "vivid example" into one
+    # case; this checks they're now explicitly told apart.
+    assert "FRAMING RULE" in MAP_SYSTEM
+    assert "automatically a personal anecdote" in MAP_SYSTEM
+    assert "18-car pileup" in MAP_SYSTEM
+
+
+def test_reduce_system_carries_the_framing_rule_too():
+    # This is where the real bug manifested: REDUCE grouped an impersonal
+    # example under a "Personal Experiences" branch and copied a sibling's
+    # "personal anecdote" note onto it without checking.
+    assert "FRAMING RULE" in reduce_system("full")
+    assert "copy one sibling's correct description" in reduce_system("full")
+
+
 @pytest.mark.parametrize("level", ["brief", "full", "expert"])
 def test_reduce_system_formats_cleanly_for_every_level(level):
     text = reduce_system(level)
