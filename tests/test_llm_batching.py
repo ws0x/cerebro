@@ -9,6 +9,8 @@ means a retry (batched or not) only ever pays for genuinely new work.
 
 from __future__ import annotations
 
+import json
+
 from cerebro.cache import Cache
 from cerebro.llm.base import LLMError
 from cerebro.llm.providers import MockProvider
@@ -77,38 +79,89 @@ def test_batched_results_are_correctly_matched_back_to_their_chunk():
     assert [r["t"] for r in results] == [c.start for c in chunks] or len(results) == len(chunks)
 
 
+class _PersistentlyBrokenProvider:
+    """Always drops/fails the ONE chunk identified by ``BROKEN_MARKER`` --
+    in the batch path by omitting its "id" from the response (simulating the
+    model skipping an item), and in the single-chunk path (what the
+    auto-retry pass uses for a lone leftover) by raising outright. Keyed by
+    the chunk's own text rather than by call count, so it fails identically
+    whether it's the first pass or the retry pass -- a real, durable failure,
+    not a transient one that happens to heal itself on a second attempt."""
+
+    name = "broken"
+    model = "broken-1"
+    BROKEN_MARKER = "segment 5 "
+
+    def complete_json(self, system, user):
+        if "TASK: BATCH MAP" in system:
+            segs = json.loads(user)["segments"]
+            out = [
+                {"id": seg["id"], "topic": "ok", "type": "concept", "summary": "s", "points": []}
+                for seg in segs
+                if self.BROKEN_MARKER not in seg["text"]
+            ]
+            return {"results": out}
+        if self.BROKEN_MARKER in user:
+            raise LLMError("simulated persistent failure for this chunk")
+        return MockProvider().complete_json(system, user)
+
+
 def test_a_malformed_batch_item_does_not_break_the_others():
-    # Simulate a model that returns exactly one genuinely broken entry
-    # (missing its "id") inside the FIRST batch's response, otherwise valid.
-    class _PartlyBrokenProvider:
-        name = "broken"
-        model = "broken-1"
-
-        def __init__(self):
-            self.batch_calls = 0
-
-        def complete_json(self, system, user):
-            if "TASK: BATCH MAP" in system:
-                import json
-
-                self.batch_calls += 1
-                segs = json.loads(user)["segments"]
-                out = []
-                for pos, seg in enumerate(segs):
-                    if self.batch_calls == 1 and pos == 0:
-                        out.append({"topic": "no id field"})  # malformed: missing "id"
-                    else:
-                        out.append({"id": seg["id"], "topic": "ok", "type": "concept", "summary": "s", "points": []})
-                return {"results": out}
-            return MockProvider().complete_json(system, user)
-
-    structurer = LLMStructurer(_PartlyBrokenProvider(), Cache(enabled=False))
+    # A chunk missing from a batch's response doesn't take down the rest of
+    # that batch, let alone other batches -- even before the auto-retry pass
+    # gets a second try at just that one leftover.
+    structurer = LLMStructurer(_PersistentlyBrokenProvider(), Cache(enabled=False))
     chunks = _chunks(20)  # forces batching (batch_size > 1)
     results = structurer._map(chunks, "full")
-    # Every chunk except the single one landing in the malformed slot should
-    # still succeed -- a broken item doesn't take down its whole batch, let
-    # alone the other batches.
+    # The one persistently-broken chunk still fails even after the retry
+    # pass (it's designed to fail every attempt) -- everything else recovers.
     assert len(results) == len(chunks) - 1
+
+
+def test_map_incomplete_event_fires_when_a_chunk_still_fails_after_retry():
+    events = []
+    structurer = LLMStructurer(
+        _PersistentlyBrokenProvider(), Cache(enabled=False), on_event=lambda k, **d: events.append((k, d))
+    )
+    chunks = _chunks(20)
+    results = structurer._map(chunks, "full")
+    assert len(results) == len(chunks) - 1
+
+    retry_events = [d for k, d in events if k == "map_retry"]
+    assert len(retry_events) == 1
+    assert retry_events[0]["count"] == 1  # exactly the one leftover chunk
+
+    incomplete_events = [d for k, d in events if k == "map_incomplete"]
+    assert len(incomplete_events) == 1
+    assert incomplete_events[0] == {"failed": 1, "total": 20}
+
+
+def test_a_transient_batch_failure_is_healed_by_the_automatic_retry_pass():
+    # Fails every call in the FIRST pass, then succeeds on retry -- simulates
+    # a rate-limit burst that has calmed down by the time the retry pass runs.
+    class _FailsOnceThenRecovers:
+        name = "flaky-once"
+        model = "flaky-once-1"
+
+        def __init__(self):
+            self.first_pass_calls = 0
+            self.seen_batches: set[str] = set()
+
+        def complete_json(self, system, user):
+            if "TASK: BATCH MAP" in system and user not in self.seen_batches:
+                self.seen_batches.add(user)
+                raise LLMError("simulated transient rate limit")
+            return MockProvider().complete_json(system, user)
+
+    events = []
+    provider = _FailsOnceThenRecovers()
+    structurer = LLMStructurer(provider, Cache(enabled=False), on_event=lambda k, **d: events.append((k, d)))
+    chunks = _chunks(20)
+    results = structurer._map(chunks, "full")
+
+    assert len(results) == len(chunks)  # full recovery, nothing permanently lost
+    assert not any(k == "map_incomplete" for k, _ in events)  # nothing left to report as missing
+    assert any(k == "map_retry" for k, _ in events)  # but the retry pass did have to run
 
 
 def test_resuming_after_a_partial_failure_only_pays_for_what_remains(tmp_path):

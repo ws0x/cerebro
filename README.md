@@ -913,7 +913,17 @@ handles both:
     slow because of one long-past incident.
   `CEREBRO_GROQ_MIN_INTERVAL` / `CEREBRO_GEMINI_MIN_INTERVAL` (seconds
   between requests) still override both the default and whatever's
-  persisted, for a deliberate per-account tune.
+  persisted, for a deliberate per-account tune. Retries are paced by this
+  same limiter too — a retry is a genuinely new request, not exempt from it.
+- **A partial failure gets one automatic retry, then is reported —
+  never shipped silently.** If some chunks/sections still fail after every
+  retry a single call gets, one more pass runs over just the leftovers once
+  everything else is done (by then the rate limiter has calmed down and
+  there's real headroom left). Anything still missing after that is reported
+  plainly — `! N/M segments could not be processed even after retrying
+  (rate limited) — this map is missing content from those parts.` — instead
+  of quietly building a "successful"-looking map from whatever fraction of
+  the source happened to survive.
 - **Provider failover.** With `--engine auto` (the default) and both
   `GROQ_API_KEY`/`GEMINI_API_KEY` set, a TOTAL failure on one provider (its
   daily quota exhausted, a sustained rate-limit storm) automatically tries

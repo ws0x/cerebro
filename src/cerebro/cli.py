@@ -266,6 +266,20 @@ def _structure(transcript, level, provider_chain, cache, relationship_limit=8, s
                     )
                 elif kind == "map_progress":
                     progress.update(task, completed=d["done"])
+                elif kind == "map_retry":
+                    progress.update(task, description=f"Retrying {d['count']} rate-limited segment(s)")
+                elif kind == "map_incomplete":
+                    # A partial MAP/section failure that survived the retry
+                    # pass -- this map is missing real content, not just
+                    # running a bit slower, so it gets the loudest treatment
+                    # available (not progress.update, which a transient bar
+                    # would erase) and an actionable next step, the same
+                    # severity as the fallback-to-heuristic warning below.
+                    progress.console.print(
+                        f"[yellow]![/] {d['failed']}/{d['total']} segments could not be processed even "
+                        "after retrying (rate limited) -- [bold]this map is missing content from those "
+                        "parts.[/bold] Try again in a few minutes, or a different --engine."
+                    )
                 elif kind == "reduce_start":
                     progress.update(task, description="Reducing into a hierarchy", total=1, completed=0)
                 elif kind == "anchor_check":

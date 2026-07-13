@@ -270,6 +270,17 @@ class LLMStructurer:
                 return {}
         return self._map_batch_call(batch, level)
 
+    def _run_batches(self, pending: list[tuple[int, Chunk]], level: str, results: dict[int, dict], total: int) -> None:
+        if not pending:
+            return
+        batch_size = adaptive_batch_size(len(pending))
+        batches = [pending[i : i + batch_size] for i in range(0, len(pending), batch_size)]
+        with ThreadPoolExecutor(max_workers=self.max_workers) as pool:
+            futures = {pool.submit(self._run_one_batch, b, level): b for b in batches}
+            for fut in as_completed(futures):
+                results.update(fut.result())
+                self.on_event("map_progress", done=len(results), total=total)
+
     def _map(self, chunks: list[Chunk], level: str) -> list[dict]:
         self.on_event("map_start", total=len(chunks))
 
@@ -292,14 +303,29 @@ class LLMStructurer:
         if results:
             self.on_event("map_progress", done=len(results), total=len(chunks))
 
-        if todo:
-            batch_size = adaptive_batch_size(len(todo))
-            batches = [todo[i : i + batch_size] for i in range(0, len(todo), batch_size)]
-            with ThreadPoolExecutor(max_workers=self.max_workers) as pool:
-                futures = {pool.submit(self._run_one_batch, b, level): b for b in batches}
-                for fut in as_completed(futures):
-                    results.update(fut.result())
-                    self.on_event("map_progress", done=len(results), total=len(chunks))
+        self._run_batches(todo, level, results, len(chunks))
+
+        missing = [(i, c) for i, c in todo if i not in results]
+        if missing:
+            # A batch that failed (usually a 429 storm) during the first pass
+            # often succeeds on a second, calmer attempt: by now the shared
+            # rate limiter has backed off to a pace this account can actually
+            # sustain, and every OTHER batch is done, freeing up whatever
+            # headroom the account's per-minute window has left. One retry
+            # pass, not unbounded -- this is a second calmer attempt, not a
+            # third fight against the same burst.
+            self.on_event("map_retry", count=len(missing))
+            self._run_batches(missing, level, results, len(chunks))
+            missing = [(i, c) for i, c in missing if i not in results]
+
+        if missing:
+            # Anything still missing after the retry pass is a REAL, lasting
+            # gap in the map -- silently shipping a map built from whatever
+            # fraction of chunks happened to survive (with no indication of
+            # how much didn't) is exactly the failure mode that made a past
+            # run look like a full success while it had actually thrown away
+            # nearly the whole video. The caller must be told.
+            self.on_event("map_incomplete", failed=len(missing), total=len(chunks))
 
         ordered = [results[i] for i in sorted(results)]
         if not ordered:
@@ -457,14 +483,17 @@ class LLMStructurer:
         headings = self._polish_headings(transcript, sections, section_texts)
 
         root = Node(title=transcript.title or "Mind Map", type=NodeType.root)
-        any_succeeded = False
+        succeeded_count = 0
+        failed_count = 0
+        total_sections = len(sections) + 1
 
         # Optional leading advance-organizer branch from the pre-#1 intro/thesis.
         if len(intro.split()) >= _INTRO_MIN_WORDS:
             overview, ok = self._fill_section("Overview", intro, level)
-            any_succeeded = any_succeeded or ok
+            succeeded_count += 1 if ok else 0
+            failed_count += 0 if ok else 1
             root.children.append(self._build_section_branch(None, "Overview", sections[0].start, overview, level))
-        self.on_event("map_progress", done=1, total=len(sections) + 1)
+        self.on_event("map_progress", done=1, total=total_sections)
 
         done = 1
         results: dict[int, Node] = {}
@@ -476,19 +505,27 @@ class LLMStructurer:
             for fut in as_completed(futures):
                 i = futures[fut]
                 filled, ok = fut.result()
-                any_succeeded = any_succeeded or ok
+                succeeded_count += 1 if ok else 0
+                failed_count += 0 if ok else 1
                 results[i] = self._build_section_branch(
                     sections[i].number, headings[i], sections[i].start, filled, level
                 )
                 done += 1
-                self.on_event("map_progress", done=done, total=len(sections) + 1)
+                self.on_event("map_progress", done=done, total=total_sections)
 
-        if not any_succeeded:
+        if succeeded_count == 0:
             # Every section silently fell back to a raw snippet -- same
             # all-failed signal _map() raises on, so the caller (cli.py)
             # falls back to the heuristic engine and reports it honestly
             # instead of labeling a 100%-fallback map as an AI success.
             raise LLMError("All section-fill calls failed; cannot build a map.")
+
+        if failed_count:
+            # Some (not all) sections fell back to a raw, un-summarized
+            # snippet instead of real AI content -- same "tell the caller"
+            # principle as _map()'s map_incomplete, so a partial fallback
+            # here isn't reported identically to a full AI success either.
+            self.on_event("map_incomplete", failed=failed_count, total=total_sections)
 
         for i in range(len(sections)):
             root.children.append(results[i])
